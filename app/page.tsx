@@ -22,7 +22,32 @@ export default function Home() {
     }
     setLoading(true)
     setStatus('Reading your document...')
-    const text = await extractTextFromImage(idFile)
+    setStatus('Uploading your documents...')
+const fileExt = idFile.name.split('.').pop()
+const fileName = `${idNumber}_${Date.now()}.${fileExt}`
+const { error: uploadError } = await supabase.storage
+  .from('documents')
+  .upload(`ids/${fileName}`, idFile)
+
+if (uploadError) {
+  console.error('Upload error:', uploadError)
+}
+
+if (qualFile) {
+  const qualExt = qualFile.name.split('.').pop()
+  const qualFileName = `${idNumber}_qual_${Date.now()}.${qualExt}`
+  await supabase.storage
+    .from('documents')
+    .upload(`qualifications/${qualFileName}`, qualFile)
+}
+    
+let text = ''
+try {
+  text = await extractTextFromImage(idFile)
+} catch (err) {
+  console.error('OCR failed:', err)
+  text = ''
+}
     setStatus('Validating your ID number...')
     const validationResult = validateSAID(idNumber)
     const nameMatch = checkNameMatch(fullName, text)
@@ -110,7 +135,10 @@ export default function Home() {
                 type="text"
                 placeholder="13-digit ID number"
                 value={idNumber}
-                onChange={(e) => setIdNumber(e.target.value)}
+                onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '')
+                setIdNumber(val)
+                }}
                 maxLength={13}
                 style={{ ...inputStyle, letterSpacing: '3px', fontWeight: 500 }}
                 onFocus={(e) => { e.target.style.borderColor = '#000'; e.target.style.backgroundColor = '#fff' }}
