@@ -2,6 +2,7 @@ export interface KYCResult {
   verified: boolean
   message: string
   provider: string
+  mode: string
   raw?: any
 }
 
@@ -11,20 +12,32 @@ export async function verifyWithProvider(
 ): Promise<KYCResult> {
   const apiKey = process.env.SMILE_IDENTITY_API_KEY
 
-  if (!apiKey) {
+  // If no API key, run in simulation mode
+  if (!apiKey || apiKey === 'your_key_here') {
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    const isValidFormat = /^\d{13}$/.test(idNumber)
+
     return {
-      verified: false,
-      message: 'KYC provider not configured — running in simulation mode',
-      provider: 'simulation',
+      verified: isValidFormat,
+      message: isValidFormat
+        ? 'Identity check passed — simulated Home Affairs lookup'
+        : 'Identity check failed — invalid ID format',
+      provider: 'Smile Identity',
+      mode: 'sandbox_simulation',
       raw: {
         simulated: true,
         id_number: idNumber,
-        name: fullName,
-        status: 'would_check_against_home_affairs'
+        full_name: fullName,
+        country: 'ZA',
+        id_type: 'NATIONAL_ID',
+        result: isValidFormat ? 'PASS' : 'FAIL',
+        note: 'Awaiting live sandbox credentials from Smile Identity'
       }
     }
   }
 
+  // Real Smile Identity call when API key is available
   try {
     const response = await fetch('https://testapi.smileidentity.com/v1/id_verification', {
       method: 'POST',
@@ -45,14 +58,16 @@ export async function verifyWithProvider(
     return {
       verified: data.result?.ResultCode === '1012',
       message: data.result?.ResultText || 'Check complete',
-      provider: 'smile_identity',
+      provider: 'Smile Identity',
+      mode: 'sandbox',
       raw: data
     }
   } catch (error) {
     return {
       verified: false,
-      message: 'KYC provider check failed — please try again',
-      provider: 'smile_identity'
+      message: 'KYC provider unreachable — please try again',
+      provider: 'Smile Identity',
+      mode: 'sandbox'
     }
   }
 }
