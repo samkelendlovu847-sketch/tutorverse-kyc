@@ -1,65 +1,146 @@
-import Image from "next/image";
+'use client'
+
+import { extractTextFromImage } from '../lib/ocr'
+import { useState } from 'react'
+import { supabase } from '../lib/supabase'
+import { validateSAID, checkNameMatch } from '../lib/validate'
 
 export default function Home() {
+  const [fullName, setFullName] = useState('')
+  const [idNumber, setIdNumber] = useState('')
+  const [idFile, setIdFile] = useState<File | null>(null)
+  const [qualFile, setQualFile] = useState<File | null>(null)
+  const [status, setStatus] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [extractedText, setExtractedText] = useState('')
+  const [validation, setValidation] = useState<any>(null)
+  const handleSubmit = async () => {
+    if (!fullName || !idNumber || !idFile) {
+      setStatus('Please fill in all required fields and upload your ID.')
+      return
+    }
+    setLoading(true)
+    setStatus('Submitting...')
+    const text = await extractTextFromImage(idFile)
+    setExtractedText(text)
+    const validationResult = validateSAID(idNumber)
+    const nameMatch = checkNameMatch(fullName, text)
+    setValidation({ ...validationResult, nameMatch })
+    const { error } = await supabase.from('verifications').insert([
+      {
+        full_name: fullName,
+        id_number: idNumber,
+        status: 'pending',
+      },
+    ])
+
+    if (error) {
+      setStatus('Something went wrong. Please try again.')
+    } else {
+      setStatus('Documents submitted successfully! We will verify your identity shortly.')
+    }
+    setLoading(false)
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+      <div className="bg-white rounded-2xl shadow-lg p-8 w-full max-w-lg">
+        
+        <div className="mb-8 text-center">
+          <h1 className="text-3xl font-bold text-gray-900">Tutor Verification</h1>
+          <p className="text-gray-500 mt-2">Submit your documents to get your Verified badge</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+
+        <div className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <input
+              type="text"
+              placeholder="Enter your full name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">SA ID Number *</label>
+            <input
+              type="text"
+              placeholder="13-digit ID number"
+              value={idNumber}
+              onChange={(e) => setIdNumber(e.target.value)}
+              maxLength={13}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ID or Passport Document *</label>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setIdFile(e.target.files?.[0] || null)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">Accepted: JPG, PNG, PDF</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Qualification Certificate (optional)</label>
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              onChange={(e) => setQualFile(e.target.files?.[0] || null)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50"
           >
-            Documentation
-          </a>
+            {loading ? 'Submitting...' : 'Submit for Verification'}
+          </button>
+
+          {status && (
+            <div className={`text-sm text-center p-3 rounded-lg ${status.includes('successfully') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              {status}
+            </div>
+          )}
+          {extractedText && (
+  <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+    <h3 className="text-sm font-semibold text-gray-700 mb-2">Text extracted from document:</h3>
+    <p className="text-xs text-gray-600 whitespace-pre-wrap">{extractedText}</p>
+  </div>
+)}
+{validation && (
+  <div className={`mt-4 p-4 rounded-lg border ${validation.isValid ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+    <h3 className="text-sm font-semibold mb-2">ID Validation Result:</h3>
+    {validation.isValid ? (
+      <p className="text-green-700 text-sm">✅ ID number is valid</p>
+    ) : (
+      validation.errors.map((err: string, i: number) => (
+        <p key={i} className="text-red-700 text-sm">❌ {err}</p>
+      ))
+    )}
+    {validation.details.dateOfBirth && (
+      <p className="text-sm mt-1">📅 Date of birth: {validation.details.dateOfBirth}</p>
+    )}
+    {validation.details.gender && (
+      <p className="text-sm">👤 Gender: {validation.details.gender}</p>
+    )}
+    {validation.details.citizenship && (
+      <p className="text-sm">🌍 Citizenship: {validation.details.citizenship}</p>
+    )}
+    <p className="text-sm mt-1">
+      {validation.nameMatch ? '✅ Name found in document' : '⚠️ Name not found in document'}
+    </p>
+  </div>
+)}
         </div>
-      </main>
-    </div>
-  );
+      </div>
+    </main>
+  )
 }
