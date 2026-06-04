@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '../../../lib/supabase'
 import { validateSAID } from '../../../lib/validate'
+import { verifyWithProvider } from '../../../lib/kyc'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const idNumber = searchParams.get('id_number')
+  const fullName = searchParams.get('full_name') || ''
 
   if (!idNumber) {
     return NextResponse.json(
@@ -14,6 +16,7 @@ export async function GET(request: NextRequest) {
   }
 
   const validation = validateSAID(idNumber)
+  const kyc = await verifyWithProvider(idNumber, fullName)
 
   const { data, error } = await supabase
     .from('verifications')
@@ -26,6 +29,7 @@ export async function GET(request: NextRequest) {
       id_number: idNumber,
       status: 'not_found',
       valid_format: validation.isValid,
+      kyc_check: kyc,
       message: 'No verification record found for this ID number'
     })
   }
@@ -36,6 +40,7 @@ export async function GET(request: NextRequest) {
     status: data.status,
     valid_format: validation.isValid,
     details: validation.details,
+    kyc_check: kyc,
     message: data.status === 'pending'
       ? 'Verification is pending review'
       : data.status === 'verified'
