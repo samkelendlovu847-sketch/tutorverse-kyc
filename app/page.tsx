@@ -21,49 +21,45 @@ export default function Home() {
       return
     }
     setLoading(true)
+
+    try {
+      const fileExt = idFile.name.split('.').pop()
+      const fileName = `${idNumber}_${Date.now()}.${fileExt}`
+      await supabase.storage.from('documents').upload(`ids/${fileName}`, idFile)
+      if (qualFile) {
+        const qualExt = qualFile.name.split('.').pop()
+        const qualFileName = `${idNumber}_qual_${Date.now()}.${qualExt}`
+        await supabase.storage.from('documents').upload(`qualifications/${qualFileName}`, qualFile)
+      }
+    } catch (err) {
+      console.error('Storage error:', err)
+    }
+
     setStatus('Reading your document...')
-    setStatus('Uploading your documents...')
-const fileExt = idFile.name.split('.').pop()
-const fileName = `${idNumber}_${Date.now()}.${fileExt}`
-const { error: uploadError } = await supabase.storage
-  .from('documents')
-  .upload(`ids/${fileName}`, idFile)
+    let text = ''
+    try {
+      text = await extractTextFromImage(idFile)
+    } catch (err) {
+      console.error('OCR failed:', err)
+    }
 
-if (uploadError) {
-  console.error('Upload error:', uploadError)
-}
-
-if (qualFile) {
-  const qualExt = qualFile.name.split('.').pop()
-  const qualFileName = `${idNumber}_qual_${Date.now()}.${qualExt}`
-  await supabase.storage
-    .from('documents')
-    .upload(`qualifications/${qualFileName}`, qualFile)
-}
-    
-let text = ''
-try {
-  text = await extractTextFromImage(idFile)
-} catch (err) {
-  console.error('OCR failed:', err)
-  text = ''
-}
     setStatus('Validating your ID number...')
     const validationResult = validateSAID(idNumber)
     const nameMatch = checkNameMatch(fullName, text)
     setValidation({ ...validationResult, nameMatch })
+
     setStatus('Saving your submission...')
     const { error } = await supabase.from('verifications').insert([
       { full_name: fullName, id_number: idNumber, status: 'pending' },
     ])
+
     if (error) {
       setStatus('Something went wrong. Please try again.')
-      setLoading(false)
     } else {
       setStatus('success')
       setStep(3)
-      setLoading(false)
     }
+    setLoading(false)
   }
 
   const inputStyle = {
@@ -91,19 +87,14 @@ try {
 
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-
-      {/* Nav */}
       <nav style={{ padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <text x="0" y="22" fontSize="24" fontWeight="700" fill="#000">✕</text>
-          </svg>
+          <span style={{ fontSize: '20px', fontWeight: 700 }}>✕</span>
           <span style={{ fontSize: '17px', fontWeight: 700, color: '#000', letterSpacing: '-0.3px' }}>Tutorverse</span>
         </div>
         <span style={{ fontSize: '12px', color: '#999', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 500 }}>KYC Verification</span>
       </nav>
 
-      {/* Content */}
       <div style={{ maxWidth: '520px', margin: '0 auto', padding: '56px 24px 40px' }}>
 
         {/* Step 1 */}
@@ -135,10 +126,7 @@ try {
                 type="text"
                 placeholder="13-digit ID number"
                 value={idNumber}
-                onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '')
-                setIdNumber(val)
-                }}
+                onChange={(e) => { const val = e.target.value.replace(/\D/g, ''); setIdNumber(val) }}
                 maxLength={13}
                 style={{ ...inputStyle, letterSpacing: '3px', fontWeight: 500 }}
                 onFocus={(e) => { e.target.style.borderColor = '#000'; e.target.style.backgroundColor = '#fff' }}
@@ -161,12 +149,11 @@ try {
                 setStatus('')
                 setStep(2)
               }}
-              style={{ width: '100%', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '12px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', letterSpacing: '-0.1px' }}
+              style={{ width: '100%', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '12px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
             >
               Continue
             </button>
 
-            {/* Progress */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '32px' }}>
               <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
               <div style={{ width: '24px', height: '4px', backgroundColor: '#e5e5e5', borderRadius: '2px' }} />
@@ -179,7 +166,7 @@ try {
         {/* Step 2 */}
         {step === 2 && (
           <div>
-            <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: '#888', marginBottom: '24px', padding: 0, display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: '#888', marginBottom: '24px', padding: 0 }}>
               ← Back
             </button>
 
@@ -190,12 +177,11 @@ try {
               Upload a clear photo or scan. We'll read your document automatically.
             </p>
 
-            {/* ID upload box */}
             <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>ID or passport <span style={{ color: '#e53e3e' }}>*</span></label>
               <div
                 onClick={() => document.getElementById('idFileInput')?.click()}
-                style={{ backgroundColor: idFile ? '#f5f5f5' : '#f5f5f5', border: `2px dashed ${idFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
+                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${idFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}
               >
                 <input id="idFileInput" type="file" accept="image/*,.pdf" style={{ display: 'none' }}
                   onChange={(e) => setIdFile(e.target.files?.[0] || null)} />
@@ -216,12 +202,11 @@ try {
               </div>
             </div>
 
-            {/* Qualification upload box */}
             <div style={{ marginBottom: '36px' }}>
               <label style={labelStyle}>Qualification certificate <span style={{ color: '#bbb', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '11px' }}>(optional)</span></label>
               <div
                 onClick={() => document.getElementById('qualFileInput')?.click()}
-                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${qualFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
+                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${qualFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}
               >
                 <input id="qualFileInput" type="file" accept="image/*,.pdf" style={{ display: 'none' }}
                   onChange={(e) => setQualFile(e.target.files?.[0] || null)} />
@@ -246,9 +231,6 @@ try {
             {loading && (
               <div style={{ textAlign: 'center', marginBottom: '16px' }}>
                 <p style={{ fontSize: '13px', color: '#888' }}>{status}</p>
-                <div style={{ width: '100%', height: '3px', backgroundColor: '#f0f0f0', borderRadius: '2px', marginTop: '10px', overflow: 'hidden' }}>
-                  <div style={{ width: '60%', height: '100%', backgroundColor: '#000', borderRadius: '2px', animation: 'slide 1.5s ease-in-out infinite' }} />
-                </div>
               </div>
             )}
 
@@ -273,7 +255,7 @@ try {
         {step === 3 && (
           <div style={{ textAlign: 'center', paddingTop: '20px' }}>
             <div style={{ width: '72px', height: '72px', backgroundColor: '#000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 28px' }}>
-              <span style={{ color: '#fff', fontSize: '32px', lineHeight: 1 }}>✓</span>
+              <span style={{ color: '#fff', fontSize: '32px', lineHeight: '1' }}>✓</span>
             </div>
 
             <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#000', marginBottom: '12px', letterSpacing: '-0.5px' }}>Submitted successfully</h1>
@@ -335,7 +317,6 @@ try {
           </div>
         )}
 
-        {/* Footer */}
         <p style={{ textAlign: 'center', fontSize: '12px', color: '#ccc', marginTop: '48px' }}>
           Protected by POPIA · © 2026 Tutorverse (Pty) Ltd
         </p>
