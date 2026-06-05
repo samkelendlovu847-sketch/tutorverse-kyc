@@ -4,15 +4,18 @@ import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { extractTextFromImage } from '../lib/ocr'
 import { validateSAID, checkNameMatch } from '../lib/validate'
+import { compareFaces } from '../lib/faceMatch'
 
 export default function Home() {
   const [fullName, setFullName] = useState('')
   const [idNumber, setIdNumber] = useState('')
   const [idFile, setIdFile] = useState<File | null>(null)
   const [qualFile, setQualFile] = useState<File | null>(null)
+  const [selfieFile, setSelfieFile] = useState<File | null>(null)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const [validation, setValidation] = useState<any>(null)
+  const [faceMatch, setFaceMatch] = useState<any>(null)
   const [step, setStep] = useState(1)
 
   const handleSubmit = async () => {
@@ -47,6 +50,17 @@ export default function Home() {
     const validationResult = validateSAID(idNumber)
     const nameMatch = checkNameMatch(fullName, text)
     setValidation({ ...validationResult, nameMatch })
+
+    if (selfieFile) {
+      setStatus('Comparing faces...')
+      try {
+        const faceResult = await compareFaces(idFile, selfieFile)
+        setFaceMatch(faceResult)
+      } catch (err) {
+        console.error('Face match failed:', err)
+        setFaceMatch({ match: false, confidence: 0, message: 'Face comparison could not be completed' })
+      }
+    }
 
     setStatus('Saving your submission...')
     const { error } = await supabase.from('verifications').insert([
@@ -111,7 +125,7 @@ export default function Home() {
               <label style={labelStyle}>Full name</label>
               <input
                 type="text"
-                placeholder="e.g. Samkele Ndlovu"
+                placeholder="e.g. Daniel Wright"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 style={inputStyle}
@@ -177,6 +191,7 @@ export default function Home() {
               Upload a clear photo or scan. We'll read your document automatically.
             </p>
 
+            {/* ID upload */}
             <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>ID or passport <span style={{ color: '#e53e3e' }}>*</span></label>
               <div
@@ -202,7 +217,8 @@ export default function Home() {
               </div>
             </div>
 
-            <div style={{ marginBottom: '36px' }}>
+            {/* Qualification upload */}
+            <div style={{ marginBottom: '16px' }}>
               <label style={labelStyle}>Qualification certificate <span style={{ color: '#bbb', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '11px' }}>(optional)</span></label>
               <div
                 onClick={() => document.getElementById('qualFileInput')?.click()}
@@ -222,6 +238,32 @@ export default function Home() {
                     </div>
                     <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>Click to upload</p>
                     <p style={{ fontSize: '12px', color: '#aaa' }}>JPG, PNG or PDF supported</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Selfie upload */}
+            <div style={{ marginBottom: '36px' }}>
+              <label style={labelStyle}>Selfie photo <span style={{ color: '#bbb', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '11px' }}>(optional — for face match)</span></label>
+              <div
+                onClick={() => document.getElementById('selfieFileInput')?.click()}
+                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${selfieFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}
+              >
+                <input id="selfieFileInput" type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={(e) => setSelfieFile(e.target.files?.[0] || null)} />
+                {selfieFile ? (
+                  <div>
+                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>✓ {selfieFile.name}</p>
+                    <p style={{ fontSize: '12px', color: '#888' }}>Click to replace</p>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ width: '40px', height: '40px', backgroundColor: '#e8e8e8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px' }}>
+                      <span style={{ fontSize: '20px' }}>🤳</span>
+                    </div>
+                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>Click to upload selfie</p>
+                    <p style={{ fontSize: '12px', color: '#aaa' }}>JPG or PNG — face must be clearly visible</p>
                   </div>
                 )}
               </div>
@@ -264,7 +306,7 @@ export default function Home() {
             </p>
 
             {validation && (
-              <div style={{ backgroundColor: '#f5f5f5', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '28px' }}>
+              <div style={{ backgroundColor: '#f5f5f5', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '16px' }}>
                 <p style={{ fontSize: '11px', fontWeight: 600, color: '#888', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>Verification summary</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -301,8 +343,28 @@ export default function Home() {
               </div>
             )}
 
+            {faceMatch && (
+              <div style={{ backgroundColor: faceMatch.match ? '#f5f5f5' : '#fff5f5', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '28px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: '#888', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>Face match result</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '14px', color: '#555' }}>Result</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: faceMatch.match ? '#000' : '#e53e3e' }}>{faceMatch.match ? '✓ Match confirmed' : '✗ No match'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '14px', color: '#555' }}>Confidence</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#000' }}>{faceMatch.confidence}%</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '14px', color: '#555' }}>Detail</span>
+                    <span style={{ fontSize: '13px', color: '#888', maxWidth: '240px', textAlign: 'right' }}>{faceMatch.message}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <button
-              onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFile(null); setQualFile(null); setValidation(null); setStatus('') }}
+              onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFile(null); setQualFile(null); setSelfieFile(null); setValidation(null); setFaceMatch(null); setStatus('') }}
               style={{ width: '100%', backgroundColor: '#fff', color: '#000', border: '1.5px solid #e5e5e5', borderRadius: '12px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
             >
               Submit another tutor
