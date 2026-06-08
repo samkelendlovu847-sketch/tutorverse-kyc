@@ -68,3 +68,64 @@ export function checkNameMatch(formName: string, extractedText: string): boolean
   const text = extractedText.toLowerCase()
   return nameParts.some(part => part.length > 2 && text.includes(part))
 }
+export interface AuthenticityResult {
+  isAuthentic: boolean
+  score: number
+  flags: string[]
+}
+
+export function checkDocumentAuthenticity(
+  file: File,
+  extractedText: string
+): AuthenticityResult {
+  const flags: string[] = []
+  let score = 100
+
+  // Check 1: file size too small (likely fake or screenshot)
+  if (file.size < 10000) {
+    flags.push('File size is suspiciously small')
+    score -= 30
+  }
+
+  // Check 2: file size too large (likely altered or padded)
+  if (file.size > 10000000) {
+    flags.push('File size is unusually large')
+    score -= 10
+  }
+
+  // Check 3: check file type is image or pdf
+  const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
+  if (!validTypes.includes(file.type)) {
+    flags.push('Invalid file type detected')
+    score -= 40
+  }
+
+  // Check 4: extracted text too short (blank or unreadable document)
+  if (extractedText.length < 20) {
+    flags.push('Document appears blank or unreadable')
+    score -= 20
+  }
+
+  // Check 5: check for SA ID number pattern in extracted text
+  const idPattern = /\d{13}/
+  if (extractedText && !idPattern.test(extractedText)) {
+    flags.push('No ID number pattern found in document')
+    score -= 15
+  }
+
+  // Check 6: check for suspicious keywords
+  const suspiciousKeywords = ['copy', 'specimen', 'sample', 'void', 'fake', 'test']
+  const lowerText = extractedText.toLowerCase()
+  suspiciousKeywords.forEach(keyword => {
+    if (lowerText.includes(keyword)) {
+      flags.push(`Suspicious keyword detected: "${keyword}"`)
+      score -= 25
+    }
+  })
+
+  return {
+    isAuthentic: score >= 60,
+    score: Math.max(0, score),
+    flags
+  }
+}

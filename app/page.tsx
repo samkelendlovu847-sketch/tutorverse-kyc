@@ -1,385 +1,504 @@
 'use client'
 
-import { useState } from 'react'
+import { verifyWithProvider } from '../lib/kyc'
+import { useState, useRef, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { extractTextFromImage } from '../lib/ocr'
-import { validateSAID, checkNameMatch } from '../lib/validate'
+import { validateSAID, checkNameMatch, checkDocumentAuthenticity } from '../lib/validate'
 import { compareFaces } from '../lib/faceMatch'
 
+const GOLD = '#F0B90B'
+const DARK = '#000000'
+const CARD = '#F8F9FA'
+const BORDER = '#E5E5E5'
+const TEXT = '#000000'
+const MUTED = '#888888'
+
 export default function Home() {
+  const [step, setStep] = useState(1)
   const [fullName, setFullName] = useState('')
   const [idNumber, setIdNumber] = useState('')
-  const [idFile, setIdFile] = useState<File | null>(null)
+  const [idFront, setIdFront] = useState<File | null>(null)
+  const [idBack, setIdBack] = useState<File | null>(null)
   const [qualFile, setQualFile] = useState<File | null>(null)
   const [selfieFile, setSelfieFile] = useState<File | null>(null)
-  const [status, setStatus] = useState('')
+  const [cameraReady, setCameraReady] = useState(false)
+  const [cameraError, setCameraError] = useState(false)
+  const [countdown, setCountdown] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState('')
   const [validation, setValidation] = useState<any>(null)
   const [faceMatch, setFaceMatch] = useState<any>(null)
-  const [step, setStep] = useState(1)
+  const [authenticity, setAuthenticity] = useState<any>(null)
+  const [statusMsg, setStatusMsg] = useState('')
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [kycResult, setKycResult] = useState<any>(null)
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        setCameraReady(true)
+      }
+    } catch {
+      setCameraError(true)
+    }
+  }
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+    setCameraReady(false)
+  }
+
+  const takeSelfie = () => {
+    setCountdown(3)
+    const tick = (n: number) => {
+      if (n === 0) {
+        const video = videoRef.current
+        if (!video) return
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        canvas.getContext('2d')?.drawImage(video, 0, 0)
+        canvas.toBlob(blob => {
+          if (blob) {
+            const file = new File([blob], 'selfie.jpg', { type: 'image/jpeg' })
+            setSelfieFile(file)
+            stopCamera()
+            setCountdown(null)
+            setStep(4)
+          }
+        }, 'image/jpeg', 0.9)
+      } else {
+        setCountdown(n)
+        setTimeout(() => tick(n - 1), 1000)
+      }
+    }
+    setTimeout(() => tick(2), 1000)
+  }
+
+  useEffect(() => {
+    if (step === 3) startCamera()
+    else stopCamera()
+    return () => stopCamera()
+  }, [step])
 
   const handleSubmit = async () => {
-    if (!fullName || !idNumber || !idFile) {
-      setStatus('Please fill in all required fields and upload your ID.')
-      return
-    }
     setLoading(true)
+    setStep(5)
 
     try {
-      const fileExt = idFile.name.split('.').pop()
-      const fileName = `${idNumber}_${Date.now()}.${fileExt}`
-      await supabase.storage.from('documents').upload(`ids/${fileName}`, idFile)
-      if (qualFile) {
-        const qualExt = qualFile.name.split('.').pop()
-        const qualFileName = `${idNumber}_qual_${Date.now()}.${qualExt}`
-        await supabase.storage.from('documents').upload(`qualifications/${qualFileName}`, qualFile)
+      if (idFront) {
+        const ext = idFront.name.split('.').pop()
+        await supabase.storage.from('documents').upload(`ids/${idNumber}_front_${Date.now()}.${ext}`, idFront)
       }
-    } catch (err) {
-      console.error('Storage error:', err)
-    }
+    } catch { }
 
-    setStatus('Reading your document...')
+    setLoadingMsg('Reading your document...')
     let text = ''
     try {
-      text = await extractTextFromImage(idFile)
-    } catch (err) {
-      console.error('OCR failed:', err)
-    }
+      if (idFront) text = await extractTextFromImage(idFront)
+    } catch { }
 
-    setStatus('Validating your ID number...')
+    setLoadingMsg('Validating ID number...')
     const validationResult = validateSAID(idNumber)
     const nameMatch = checkNameMatch(fullName, text)
     setValidation({ ...validationResult, nameMatch })
 
-    if (selfieFile) {
-      setStatus('Comparing faces...')
-      try {
-        const faceResult = await compareFaces(idFile, selfieFile)
-        setFaceMatch(faceResult)
-      } catch (err) {
-        console.error('Face match failed:', err)
-        setFaceMatch({ match: false, confidence: 0, message: 'Face comparison could not be completed' })
-      }
+    if (idFront) {
+      setLoadingMsg('Checking document authenticity...')
+      const auth = checkDocumentAuthenticity(idFront, text)
+      setAuthenticity(auth)
     }
 
-    setStatus('Saving your submission...')
-    const { error } = await supabase.from('verifications').insert([
-      { full_name: fullName, id_number: idNumber, status: 'pending' },
+    if (selfieFile && idFront) {
+      setLoadingMsg('Running face match...')
+      try {
+        const face = await compareFaces(idFront, selfieFile)
+        setFaceMatch(face)
+      } catch { }
+    }
+
+    setLoadingMsg('Checking against authoritative source...')
+    const kycCheck = await verifyWithProvider(idNumber, fullName)
+    setKycResult(kycCheck)
+
+    setLoadingMsg('Saving submission...')
+    const finalStatus = kycCheck.verified ? 'verified' : 'pending'
+    await supabase.from('verifications').insert([
+      { full_name: fullName, id_number: idNumber, status: finalStatus }
     ])
 
-    if (error) {
-      setStatus('Something went wrong. Please try again.')
-    } else {
-      setStatus('success')
-      setStep(3)
-    }
     setLoading(false)
+    setLoadingMsg('')
+    setStep(6)
   }
 
-  const inputStyle = {
+  const progressBar = (current: number, total: number) => (
+    <div style={{ display: 'flex', gap: '4px', marginBottom: '40px' }}>
+      {Array.from({ length: total }).map((_, i) => (
+        <div key={i} style={{ flex: 1, height: '3px', borderRadius: '2px', backgroundColor: i < current ? DARK : BORDER, transition: 'background-color 0.3s' }} />
+      ))}
+    </div>
+  )
+
+  const inputStyle: React.CSSProperties = {
     width: '100%',
-    backgroundColor: '#f5f5f5',
-    border: '1.5px solid transparent',
-    borderRadius: '12px',
+    backgroundColor: CARD,
+    border: `1px solid ${BORDER}`,
+    borderRadius: '8px',
     padding: '14px 16px',
     fontSize: '15px',
     outline: 'none',
-    boxSizing: 'border-box' as const,
-    color: '#000',
-    transition: 'border-color 0.2s',
+    boxSizing: 'border-box',
+    color: TEXT,
+    fontFamily: 'inherit',
   }
 
-  const labelStyle = {
+  const labelStyle: React.CSSProperties = {
     display: 'block',
-    fontSize: '11px',
+    fontSize: '13px',
     fontWeight: 600,
-    color: '#888',
-    letterSpacing: '0.08em',
-    marginBottom: '6px',
-    textTransform: 'uppercase' as const,
+    color: TEXT,
+    marginBottom: '8px',
   }
+
+  const uploadBox = (file: File | null, inputId: string, label: string, onChange: (f: File) => void) => (
+    <div style={{ marginBottom: '20px' }}>
+      <p style={{ fontSize: '13px', fontWeight: 600, color: MUTED, marginBottom: '10px' }}>{label}</p>
+      <div
+        onClick={() => document.getElementById(inputId)?.click()}
+        style={{ border: `2px dashed ${file ? DARK : BORDER}`, borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', backgroundColor: file ? '#f9f9f9' : '#fff', transition: 'all 0.2s' }}
+      >
+        <input id={inputId} type="file" accept="image/*,.pdf" style={{ display: 'none' }}
+          onChange={(e) => { if (e.target.files?.[0]) onChange(e.target.files[0]) }} />
+        {file ? (
+          <div>
+            <div style={{ fontSize: '32px', marginBottom: '8px' }}>✓</div>
+            <p style={{ fontSize: '14px', fontWeight: 600, color: DARK }}>{file.name}</p>
+            <p style={{ fontSize: '12px', color: MUTED, marginTop: '4px' }}>Click to replace</p>
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize: '32px', marginBottom: '8px' }}>⬆</div>
+            <p style={{ fontSize: '14px', fontWeight: 600, color: DARK }}>Upload</p>
+            <p style={{ fontSize: '12px', color: MUTED, marginTop: '4px' }}>Max 50 MB in .jpg/.jpeg/.png format</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const btnPrimary = (text: string, onClick: () => void, disabled = false) => (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{ width: '100%', backgroundColor: disabled ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '8px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: disabled ? 'not-allowed' : 'pointer', marginTop: '8px' }}
+    >
+      {text}
+    </button>
+  )
+
+  const backBtn = (onClick: () => void) => (
+    <button onClick={onClick} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '14px', color: MUTED, marginBottom: '28px', padding: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+      ← Back
+    </button>
+  )
 
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
-      <nav style={{ padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontSize: '20px', fontWeight: 700 }}>✕</span>
-          <span style={{ fontSize: '17px', fontWeight: 700, color: '#000', letterSpacing: '-0.3px' }}>Tutorverse</span>
+
+      {/* Nav */}
+      <nav style={{ backgroundColor: '#fff', borderBottom: `1px solid ${BORDER}`, padding: '0 32px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '22px', fontWeight: 700, color: DARK }}>✕</span>
+          <span style={{ color: DARK, fontWeight: 700, fontSize: '18px', letterSpacing: '-0.3px' }}>Tutorverse</span>
         </div>
-        <span style={{ fontSize: '12px', color: '#999', letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 500 }}>KYC Verification</span>
+        <span style={{ color: MUTED, fontSize: '12px', letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>KYC Verification</span>
       </nav>
 
-      <div style={{ maxWidth: '520px', margin: '0 auto', padding: '56px 24px 40px' }}>
+      <div style={{ maxWidth: '560px', margin: '0 auto', padding: '48px 24px' }}>
 
-        {/* Step 1 */}
+        {/* STEP 1 — Personal Info */}
         {step === 1 && (
           <div>
-            <h1 style={{ fontSize: '32px', fontWeight: 700, color: '#000', lineHeight: 1.2, marginBottom: '12px', letterSpacing: '-0.5px' }}>
-              Verify Your<br />Identity
-            </h1>
-            <p style={{ fontSize: '15px', color: '#888', marginBottom: '40px', lineHeight: 1.6 }}>
-              Enter your details exactly as they appear on your South African ID document.
-            </p>
+            {progressBar(1, 5)}
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Let's Get You Verified</h1>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '36px' }}>Enter your details exactly as they appear on your South African ID.</p>
 
             <div style={{ marginBottom: '20px' }}>
-              <label style={labelStyle}>Full name</label>
+              <label style={labelStyle}>Residence</label>
+              <div style={{ ...inputStyle, display: 'flex', alignItems: 'center', gap: '10px', cursor: 'default' }}>
+                <span>🇿🇦</span>
+                <span style={{ flex: 1 }}>South Africa</span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={labelStyle}>Full Name</label>
               <input
                 type="text"
-                placeholder="e.g. Daniel Wright"
+                placeholder="e.g. Samkele Ndlovu"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 style={inputStyle}
-                onFocus={(e) => { e.target.style.borderColor = '#000'; e.target.style.backgroundColor = '#fff' }}
-                onBlur={(e) => { e.target.style.borderColor = 'transparent'; e.target.style.backgroundColor = '#f5f5f5' }}
               />
             </div>
 
             <div style={{ marginBottom: '32px' }}>
-              <label style={labelStyle}>SA ID number</label>
+              <label style={labelStyle}>South African ID Number</label>
               <input
                 type="text"
                 placeholder="13-digit ID number"
                 value={idNumber}
                 onChange={(e) => { const val = e.target.value.replace(/\D/g, ''); setIdNumber(val) }}
                 maxLength={13}
-                style={{ ...inputStyle, letterSpacing: '3px', fontWeight: 500 }}
-                onFocus={(e) => { e.target.style.borderColor = '#000'; e.target.style.backgroundColor = '#fff' }}
-                onBlur={(e) => { e.target.style.borderColor = 'transparent'; e.target.style.backgroundColor = '#f5f5f5' }}
+                style={{ ...inputStyle, letterSpacing: '2px' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-                <span style={{ fontSize: '12px', color: '#bbb' }}>Numbers only</span>
-                <span style={{ fontSize: '12px', color: idNumber.length === 13 ? '#000' : '#bbb', fontWeight: idNumber.length === 13 ? 600 : 400 }}>{idNumber.length} / 13</span>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+                <span style={{ fontSize: '12px', color: idNumber.length === 13 ? DARK : MUTED }}>{idNumber.length} / 13</span>
               </div>
             </div>
 
-            {status && <p style={{ fontSize: '13px', color: '#e53e3e', marginBottom: '16px', textAlign: 'center' }}>{status}</p>}
+            <p style={{ fontSize: '12px', color: MUTED, marginBottom: '16px', textAlign: 'center' }}>
+              By continuing, I agree to the <span style={{ color: DARK, fontWeight: 600, cursor: 'pointer' }}>Terms of Use</span> and <span style={{ color: DARK, fontWeight: 600, cursor: 'pointer' }}>Privacy Policy</span>.
+            </p>
 
-            <button
-              onClick={() => {
-                if (!fullName || idNumber.length !== 13) {
-                  setStatus('Please enter your full name and a 13-digit ID number.')
-                  return
-                }
-                setStatus('')
-                setStep(2)
-              }}
-              style={{ width: '100%', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '12px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Continue
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '32px' }}>
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#e5e5e5', borderRadius: '2px' }} />
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#e5e5e5', borderRadius: '2px' }} />
-            </div>
-            <p style={{ textAlign: 'center', fontSize: '12px', color: '#bbb', marginTop: '8px' }}>Step 1 of 3</p>
+            {btnPrimary('Continue', () => {
+              if (!fullName || idNumber.length !== 13) {
+                setStatusMsg('Please enter your full name and a valid 13-digit ID number.')
+                return
+              }
+              setStatusMsg('')
+              setStep(2)
+            })}
+            {statusMsg && <p style={{ fontSize: '13px', color: '#e53e3e', marginTop: '12px', textAlign: 'center' }}>{statusMsg}</p>}
           </div>
         )}
 
-        {/* Step 2 */}
+        {/* STEP 2 — Document Upload */}
         {step === 2 && (
           <div>
-            <button onClick={() => setStep(1)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', color: '#888', marginBottom: '24px', padding: 0 }}>
-              ← Back
-            </button>
+            {progressBar(2, 5)}
+            {backBtn(() => setStep(1))}
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Upload your ID document</h1>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '36px' }}>Your ID document will be scanned for personal data extraction.</p>
 
-            <h1 style={{ fontSize: '32px', fontWeight: 700, color: '#000', lineHeight: 1.2, marginBottom: '12px', letterSpacing: '-0.5px' }}>
-              Upload<br />Documents
-            </h1>
-            <p style={{ fontSize: '15px', color: '#888', marginBottom: '40px', lineHeight: 1.6 }}>
-              Upload a clear photo or scan. We'll read your document automatically.
+            {uploadBox(idFront, 'idFrontInput', 'Front side of ID Card', (f) => setIdFront(f))}
+            {uploadBox(idBack, 'idBackInput', 'Back side of ID Card', (f) => setIdBack(f))}
+
+            <div style={{ backgroundColor: CARD, borderRadius: '10px', padding: '16px 20px', marginBottom: '24px' }}>
+              <p style={{ fontSize: '13px', color: MUTED, marginBottom: '6px', fontWeight: 600 }}>Requirements</p>
+              {['Please use the original ID; copies or screenshots are not accepted.', 'Ensure all information is visible; damaged or expired IDs are not accepted.', 'Turn off any beauty filters or photo enhancements.'].map((t, i) => (
+                <p key={i} style={{ fontSize: '13px', color: MUTED, marginBottom: '4px' }}>◆ {t}</p>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontSize: '13px', color: MUTED, marginBottom: '10px', fontWeight: 600 }}>Qualification Certificate <span style={{ fontWeight: 400 }}>(optional)</span></p>
+              {uploadBox(qualFile, 'qualInput', '', (f) => setQualFile(f))}
+            </div>
+
+            {btnPrimary('Continue', () => {
+              if (!idFront) {
+                setStatusMsg('Please upload the front of your ID.')
+                return
+              }
+              setStatusMsg('')
+              setStep(3)
+            })}
+            {statusMsg && <p style={{ fontSize: '13px', color: '#e53e3e', marginTop: '12px', textAlign: 'center' }}>{statusMsg}</p>}
+          </div>
+        )}
+
+        {/* STEP 3 — Liveness Check */}
+        {step === 3 && (
+          <div>
+            {progressBar(3, 5)}
+            {backBtn(() => setStep(2))}
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Liveness Check</h1>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '32px' }}>Position your face inside the oval for a quick scan.</p>
+
+            {cameraError ? (
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '40px 20px', textAlign: 'center', marginBottom: '24px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>📷</div>
+                <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Camera access required</h2>
+                <p style={{ fontSize: '14px', color: MUTED, marginBottom: '24px' }}>When prompted, please enable camera access to continue. We can't verify you without your camera.</p>
+                {btnPrimary('Enable camera', () => { setCameraError(false); startCamera() })}
+              </div>
+            ) : (
+              <div>
+                <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#000', marginBottom: '24px' }}>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    style={{ width: '100%', display: 'block', maxHeight: '400px', objectFit: 'cover' }}
+                  />
+                  {/* Oval overlay */}
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <div style={{ width: '220px', height: '280px', border: `3px solid ${DARK}`, borderRadius: '50%', boxShadow: '0 0 0 9999px rgba(255,255,255,0.5)' }} />
+                  </div>
+                  {countdown !== null && (
+                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '80px', fontWeight: 700, color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+                      {countdown}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ backgroundColor: CARD, borderRadius: '10px', padding: '16px 20px', marginBottom: '24px' }}>
+                  {['Your face and background will be recorded.', 'Maximize screen brightness.', 'Ensure you are in a well lit area.', 'No glasses, mask, or hat.'].map((t, i) => (
+                    <p key={i} style={{ fontSize: '13px', color: MUTED, marginBottom: '4px' }}>◆ {t}</p>
+                  ))}
+                </div>
+
+                {cameraReady && countdown === null && btnPrimary('📸 Take selfie', takeSelfie)}
+                {!cameraReady && <p style={{ textAlign: 'center', color: MUTED, fontSize: '14px' }}>Starting camera...</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 4 — Confirm Information */}
+        {step === 4 && (
+          <div>
+            {progressBar(4, 5)}
+            {backBtn(() => setStep(3))}
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Confirm Information</h1>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '32px' }}>By continuing, you agree that the below captured personal data is accurate.</p>
+
+            <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '24px', marginBottom: '24px' }}>
+              {[
+                { label: 'Full Name', value: fullName.toUpperCase() },
+                { label: 'South African ID Number', value: idNumber },
+                { label: 'Residence', value: '🇿🇦 South Africa' },
+                { label: 'ID Document', value: idFront ? `✓ ${idFront.name}` : 'Not uploaded' },
+                { label: 'Selfie', value: selfieFile ? '✓ Captured' : 'Not taken' },
+              ].map((row, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: i < 4 ? `1px solid ${BORDER}` : 'none' }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
+                  <span style={{ fontSize: '14px', fontWeight: 600, color: DARK }}>{row.value}</span>
+                </div>
+              ))}
+            </div>
+
+            <p style={{ fontSize: '13px', color: MUTED, marginBottom: '16px', textAlign: 'center', cursor: 'pointer' }}>
+              <span style={{ color: DARK, fontWeight: 600 }}>Wrong information? Go back to edit</span>
             </p>
 
-            {/* ID upload */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>ID or passport <span style={{ color: '#e53e3e' }}>*</span></label>
-              <div
-                onClick={() => document.getElementById('idFileInput')?.click()}
-                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${idFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}
-              >
-                <input id="idFileInput" type="file" accept="image/*,.pdf" style={{ display: 'none' }}
-                  onChange={(e) => setIdFile(e.target.files?.[0] || null)} />
-                {idFile ? (
-                  <div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>✓ {idFile.name}</p>
-                    <p style={{ fontSize: '12px', color: '#888' }}>Click to replace</p>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ width: '40px', height: '40px', backgroundColor: '#e8e8e8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px' }}>
-                      <span style={{ fontSize: '20px' }}>📄</span>
-                    </div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>Click to upload</p>
-                    <p style={{ fontSize: '12px', color: '#aaa' }}>JPG, PNG or PDF supported</p>
-                  </div>
-                )}
+            {btnPrimary('Submit for Verification', handleSubmit)}
+          </div>
+        )}
+
+        {/* STEP 5 — Processing */}
+        {step === 5 && (
+          <div style={{ textAlign: 'center', paddingTop: '40px' }}>
+            {progressBar(5, 5)}
+            <div style={{ width: '80px', height: '80px', border: `4px solid ${BORDER}`, borderTop: `4px solid ${DARK}`, borderRadius: '50%', margin: '0 auto 32px', animation: 'spin 1s linear infinite' }} />
+            <h1 style={{ fontSize: '24px', fontWeight: 700, color: DARK, marginBottom: '12px' }}>Processing your verification</h1>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '8px' }}>{loadingMsg || 'Please wait...'}</p>
+            <p style={{ fontSize: '12px', color: MUTED }}>This may take up to 30 seconds</p>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {/* STEP 6 — Result */}
+        {step === 6 && (
+          <div>
+            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+              <div style={{ width: '72px', height: '72px', backgroundColor: DARK, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                <span style={{ color: '#fff', fontSize: '32px' }}>⏳</span>
               </div>
+              <h1 style={{ fontSize: '24px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Under Review</h1>
+              <p style={{ fontSize: '14px', color: MUTED, marginBottom: '4px' }}>Estimated review time: 15 Minute(s)</p>
+              <p style={{ fontSize: '13px', color: MUTED }}>You will receive a notification once the review is completed.</p>
             </div>
 
-            {/* Qualification upload */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={labelStyle}>Qualification certificate <span style={{ color: '#bbb', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '11px' }}>(optional)</span></label>
-              <div
-                onClick={() => document.getElementById('qualFileInput')?.click()}
-                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${qualFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}
-              >
-                <input id="qualFileInput" type="file" accept="image/*,.pdf" style={{ display: 'none' }}
-                  onChange={(e) => setQualFile(e.target.files?.[0] || null)} />
-                {qualFile ? (
-                  <div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>✓ {qualFile.name}</p>
-                    <p style={{ fontSize: '12px', color: '#888' }}>Click to replace</p>
+            {validation && (
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Verification Summary</p>
+                {[
+                  { label: 'ID format', value: validation.isValid ? '✓ Valid' : '✗ Invalid', ok: validation.isValid },
+                  { label: 'Date of birth', value: validation.details?.dateOfBirth || '—', ok: true },
+                  { label: 'Gender', value: validation.details?.gender || '—', ok: true },
+                  { label: 'Citizenship', value: validation.details?.citizenship || '—', ok: true },
+                  { label: 'Name match', value: validation.nameMatch ? '✓ Matched' : '⚠ Not found', ok: validation.nameMatch },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 4 ? `1px solid ${BORDER}` : 'none' }}>
+                    <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: row.ok ? DARK : '#e53e3e' }}>{row.value}</span>
                   </div>
-                ) : (
-                  <div>
-                    <div style={{ width: '40px', height: '40px', backgroundColor: '#e8e8e8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px' }}>
-                      <span style={{ fontSize: '20px' }}>🎓</span>
-                    </div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>Click to upload</p>
-                    <p style={{ fontSize: '12px', color: '#aaa' }}>JPG, PNG or PDF supported</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Selfie upload */}
-            <div style={{ marginBottom: '36px' }}>
-              <label style={labelStyle}>Selfie photo <span style={{ color: '#bbb', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: '11px' }}>(optional — for face match)</span></label>
-              <div
-                onClick={() => document.getElementById('selfieFileInput')?.click()}
-                style={{ backgroundColor: '#f5f5f5', border: `2px dashed ${selfieFile ? '#000' : '#e0e0e0'}`, borderRadius: '12px', padding: '28px 20px', textAlign: 'center', cursor: 'pointer' }}
-              >
-                <input id="selfieFileInput" type="file" accept="image/*" style={{ display: 'none' }}
-                  onChange={(e) => setSelfieFile(e.target.files?.[0] || null)} />
-                {selfieFile ? (
-                  <div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>✓ {selfieFile.name}</p>
-                    <p style={{ fontSize: '12px', color: '#888' }}>Click to replace</p>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ width: '40px', height: '40px', backgroundColor: '#e8e8e8', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px' }}>
-                      <span style={{ fontSize: '20px' }}>🤳</span>
-                    </div>
-                    <p style={{ fontSize: '14px', fontWeight: 600, color: '#000', marginBottom: '2px' }}>Click to upload selfie</p>
-                    <p style={{ fontSize: '12px', color: '#aaa' }}>JPG or PNG — face must be clearly visible</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {status && !loading && <p style={{ fontSize: '13px', color: '#e53e3e', marginBottom: '16px', textAlign: 'center' }}>{status}</p>}
-            {loading && (
-              <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-                <p style={{ fontSize: '13px', color: '#888' }}>{status}</p>
+                ))}
               </div>
             )}
 
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              style={{ width: '100%', backgroundColor: '#000', color: '#fff', border: 'none', borderRadius: '12px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1 }}
-            >
-              {loading ? 'Processing...' : 'Submit for verification'}
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '32px' }}>
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#e5e5e5', borderRadius: '2px' }} />
-            </div>
-            <p style={{ textAlign: 'center', fontSize: '12px', color: '#bbb', marginTop: '8px' }}>Step 2 of 3</p>
-          </div>
-        )}
-
-        {/* Step 3 - Success */}
-        {step === 3 && (
-          <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-            <div style={{ width: '72px', height: '72px', backgroundColor: '#000', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 28px' }}>
-              <span style={{ color: '#fff', fontSize: '32px', lineHeight: '1' }}>✓</span>
-            </div>
-
-            <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#000', marginBottom: '12px', letterSpacing: '-0.5px' }}>Submitted successfully</h1>
-            <p style={{ fontSize: '15px', color: '#888', marginBottom: '36px', lineHeight: 1.6 }}>
-              Your documents are under review. We'll update your Tutorverse profile once verified.
-            </p>
-
-            {validation && (
-              <div style={{ backgroundColor: '#f5f5f5', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: '#888', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>Verification summary</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '14px', color: '#555' }}>ID format</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: validation.isValid ? '#000' : '#e53e3e' }}>{validation.isValid ? '✓ Valid' : '✗ Invalid'}</span>
-                  </div>
-                  {validation.details?.dateOfBirth && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', color: '#555' }}>Date of birth</span>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#000' }}>{validation.details.dateOfBirth}</span>
-                    </div>
-                  )}
-                  {validation.details?.gender && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', color: '#555' }}>Gender</span>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#000' }}>{validation.details.gender}</span>
-                    </div>
-                  )}
-                  {validation.details?.citizenship && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '14px', color: '#555' }}>Citizenship</span>
-                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#000' }}>{validation.details.citizenship}</span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '14px', color: '#555' }}>Name match</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: validation.nameMatch ? '#000' : '#e53e3e' }}>{validation.nameMatch ? '✓ Matched' : '⚠ Not found'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '14px', color: '#555' }}>Status</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#888', backgroundColor: '#e8e8e8', padding: '2px 10px', borderRadius: '20px' }}>Pending review</span>
-                  </div>
+            {authenticity && (
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Document Authenticity</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: authenticity.isAuthentic ? DARK : '#e53e3e' }}>{authenticity.isAuthentic ? '✓ Appears genuine' : '✗ Flagged'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Score</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{authenticity.score}/100</span>
                 </div>
               </div>
             )}
 
             {faceMatch && (
-              <div style={{ backgroundColor: faceMatch.match ? '#f5f5f5' : '#fff5f5', borderRadius: '12px', padding: '20px', textAlign: 'left', marginBottom: '28px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: '#888', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '14px' }}>Face match result</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '14px', color: '#555' }}>Result</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: faceMatch.match ? '#000' : '#e53e3e' }}>{faceMatch.match ? '✓ Match confirmed' : '✗ No match'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '14px', color: '#555' }}>Confidence</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#000' }}>{faceMatch.confidence}%</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '14px', color: '#555' }}>Detail</span>
-                    <span style={{ fontSize: '13px', color: '#888', maxWidth: '240px', textAlign: 'right' }}>{faceMatch.message}</span>
-                  </div>
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Face Match</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: faceMatch.match ? DARK : '#e53e3e' }}>{faceMatch.match ? '✓ Match confirmed' : '✗ No match'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Confidence</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{faceMatch.confidence}%</span>
+                </div>
+              </div>
+            )}
+
+            {faceMatch && (
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+                ...
+              </div>
+            )}
+
+            {kycResult && (
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Identity Check</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Provider</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{kycResult.provider}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: kycResult.verified ? DARK : '#e53e3e' }}>{kycResult.verified ? '✓ Verified' : '⏳ Pending review'}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
+                  <span style={{ fontSize: '14px', color: MUTED }}>Mode</span>
+                  <span style={{ fontSize: '13px', fontWeight: 600, color: MUTED }}>{kycResult.mode}</span>
                 </div>
               </div>
             )}
 
             <button
-              onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFile(null); setQualFile(null); setSelfieFile(null); setValidation(null); setFaceMatch(null); setStatus('') }}
-              style={{ width: '100%', backgroundColor: '#fff', color: '#000', border: '1.5px solid #e5e5e5', borderRadius: '12px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
+              onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFront(null); setIdBack(null); setQualFile(null); setSelfieFile(null); setValidation(null); setFaceMatch(null); setAuthenticity(null); setStatusMsg('') }}
+              style={{ width: '100%', backgroundColor: '#fff', color: DARK, border: `1.5px solid ${BORDER}`, borderRadius: '8px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
             >
-              Submit another tutor
+              Start new verification
             </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginTop: '32px' }}>
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
-              <div style={{ width: '24px', height: '4px', backgroundColor: '#000', borderRadius: '2px' }} />
-            </div>
-            <p style={{ textAlign: 'center', fontSize: '12px', color: '#bbb', marginTop: '8px' }}>Step 3 of 3</p>
           </div>
         )}
 
-        <p style={{ textAlign: 'center', fontSize: '12px', color: '#ccc', marginTop: '48px' }}>
+        <p style={{ textAlign: 'center', fontSize: '12px', color: MUTED, marginTop: '48px' }}>
           Protected by POPIA · © 2026 Tutorverse (Pty) Ltd
         </p>
       </div>

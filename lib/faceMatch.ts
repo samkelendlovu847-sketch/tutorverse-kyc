@@ -12,22 +12,57 @@ export async function compareFaces(
     const idImage = await createImageElement(idFile)
     const selfieImage = await createImageElement(selfieFile)
 
-    const idDetection = await faceapi
-      .detectSingleFace(idImage, new faceapi.TinyFaceDetectorOptions())
+    // Use more tolerant detection options
+    const options = new faceapi.TinyFaceDetectorOptions({
+      inputSize: 416,
+      scoreThreshold: 0.3
+    })
+
+    // Try detecting from full image first
+    let idDetection = await faceapi
+      .detectSingleFace(idImage, options)
       .withFaceLandmarks()
       .withFaceDescriptor()
+
+    // If no face found in ID, try with lower threshold
+    if (!idDetection) {
+      const looseOptions = new faceapi.TinyFaceDetectorOptions({
+        inputSize: 608,
+        scoreThreshold: 0.2
+      })
+      idDetection = await faceapi
+        .detectSingleFace(idImage, looseOptions)
+        .withFaceLandmarks()
+        .withFaceDescriptor()
+    }
 
     const selfieDetection = await faceapi
-      .detectSingleFace(selfieImage, new faceapi.TinyFaceDetectorOptions())
+      .detectSingleFace(selfieImage, options)
       .withFaceLandmarks()
       .withFaceDescriptor()
 
+    if (!idDetection && !selfieDetection) {
+      return {
+        match: false,
+        confidence: 0,
+        message: 'No face detected in either image — try a clearer photo'
+      }
+    }
+
     if (!idDetection) {
-      return { match: false, confidence: 0, message: 'No face detected in ID document' }
+      return {
+        match: false,
+        confidence: 0,
+        message: 'No face detected in ID document — ensure the photo is clear and well lit'
+      }
     }
 
     if (!selfieDetection) {
-      return { match: false, confidence: 0, message: 'No face detected in selfie' }
+      return {
+        match: false,
+        confidence: 0,
+        message: 'No face detected in selfie — ensure your face is clearly visible'
+      }
     }
 
     const distance = faceapi.euclideanDistance(
@@ -35,25 +70,31 @@ export async function compareFaces(
       selfieDetection.descriptor
     )
 
-    const confidence = Math.round((1 - distance) * 100)
-    const match = distance < 0.5
+    // More generous threshold — 0.6 instead of 0.5
+    const match = distance < 0.6
+    const confidence = Math.round(Math.max(0, (1 - distance) * 100))
 
     return {
       match,
-      confidence: Math.max(0, confidence),
+      confidence,
       message: match
         ? `Face match confirmed — ${confidence}% similarity`
-        : `Face match failed — ${confidence}% similarity (threshold: 50%)`
+        : `Face match failed — ${confidence}% similarity`
     }
   } catch (error) {
     console.error('Face match error:', error)
-    return { match: false, confidence: 0, message: 'Face comparison could not be completed' }
+    return {
+      match: false,
+      confidence: 0,
+      message: 'Face comparison could not be completed'
+    }
   }
 }
 
 function createImageElement(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = document.createElement('img')
+    img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
     img.onerror = reject
     img.src = URL.createObjectURL(file)
