@@ -44,7 +44,7 @@ export function validateSAID(idNumber: string): ValidationResult {
   const digits = idNumber.split('').map(Number)
   let sum = 0
   for (let i = 0; i < 12; i++) {
-    if (i % 2 === 0) {
+    if (i % 2 !== 0) {
       sum += digits[i]
     } else {
       const doubled = digits[i] * 2

@@ -242,7 +242,7 @@ export default function Home() {
               <label style={labelStyle}>Full Name</label>
               <input
                 type="text"
-                placeholder="e.g. Samkele Ndlovu"
+                placeholder="e.g. Daniel Wright"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 style={inputStyle}
