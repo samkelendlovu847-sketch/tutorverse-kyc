@@ -144,10 +144,18 @@ export default function Home() {
     setKycResult(kycCheck)
 
     // Save to Supabase
-    setLoadingMsg('Saving submission...')
+   setLoadingMsg('Saving submission...')
     const finalStatus = kycCheck.verified ? 'verified' : 'pending'
+
+    // POPIA: hash the ID number before storing — never store raw ID numbers
+    const encoder = new TextEncoder()
+    const data = encoder.encode(idNumber)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    const idNumberHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
     await supabase.from('verifications').insert([
-      { full_name: fullName, id_number: idNumber, status: finalStatus }
+      { full_name: fullName, id_number: idNumberHash, status: finalStatus }
     ])
 
     setLoading(false)
