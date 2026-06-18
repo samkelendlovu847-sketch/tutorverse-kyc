@@ -7,7 +7,6 @@ import { extractTextFromImage } from '../lib/ocr'
 import { validateSAID, checkNameMatch, checkDocumentAuthenticity } from '../lib/validate'
 import { compareFaces } from '../lib/faceMatch'
 
-const GOLD = '#F0B90B'
 const DARK = '#000000'
 const CARD = '#F8F9FA'
 const BORDER = '#E5E5E5'
@@ -30,6 +29,7 @@ export default function Home() {
   const [validation, setValidation] = useState<any>(null)
   const [faceMatch, setFaceMatch] = useState<any>(null)
   const [authenticity, setAuthenticity] = useState<any>(null)
+  const [qualResult, setQualResult] = useState<any>(null)
   const [statusMsg, setStatusMsg] = useState('')
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -91,30 +91,45 @@ export default function Home() {
     setLoading(true)
     setStep(5)
 
+    // OCR on ID document
+    setLoadingMsg('Reading your ID document...')
+    let idText = ''
     try {
-      if (idFront) {
-        const ext = idFront.name.split('.').pop()
-        await supabase.storage.from('documents').upload(`ids/${idNumber}_front_${Date.now()}.${ext}`, idFront)
+      if (idFront) idText = await extractTextFromImage(idFront)
+    } catch { }
+
+    // OCR on qualification certificate
+    setLoadingMsg('Reading your qualification certificate...')
+    let qualText = ''
+    try {
+      if (qualFile) {
+        qualText = await extractTextFromImage(qualFile)
+        const hasInstitution = qualText.length > 30
+        const hasTutorName = checkNameMatch(fullName, qualText)
+        setQualResult({
+          extracted: qualText.length > 0,
+          textLength: qualText.length,
+          nameFound: hasTutorName,
+          hasContent: hasInstitution,
+          status: hasInstitution && hasTutorName ? 'passed' : 'review_needed'
+        })
       }
     } catch { }
 
-    setLoadingMsg('Reading your document...')
-    let text = ''
-    try {
-      if (idFront) text = await extractTextFromImage(idFront)
-    } catch { }
-
+    // Validate SA ID
     setLoadingMsg('Validating ID number...')
     const validationResult = validateSAID(idNumber)
-    const nameMatch = checkNameMatch(fullName, text)
+    const nameMatch = checkNameMatch(fullName, idText)
     setValidation({ ...validationResult, nameMatch })
 
+    // Authenticity check
     if (idFront) {
       setLoadingMsg('Checking document authenticity...')
-      const auth = checkDocumentAuthenticity(idFront, text)
+      const auth = checkDocumentAuthenticity(idFront, idText)
       setAuthenticity(auth)
     }
 
+    // Face match
     if (selfieFile && idFront) {
       setLoadingMsg('Running face match...')
       try {
@@ -123,10 +138,12 @@ export default function Home() {
       } catch { }
     }
 
+    // KYC provider check
     setLoadingMsg('Checking against authoritative source...')
     const kycCheck = await verifyWithProvider(idNumber, fullName)
     setKycResult(kycCheck)
 
+    // Save to Supabase
     setLoadingMsg('Saving submission...')
     const finalStatus = kycCheck.verified ? 'verified' : 'pending'
     await supabase.from('verifications').insert([
@@ -285,27 +302,40 @@ export default function Home() {
           <div>
             {progressBar(2, 5)}
             {backBtn(() => setStep(1))}
-            <h1 style={{ fontSize: '28px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Upload your ID document</h1>
-            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '36px' }}>Your ID document will be scanned for personal data extraction.</p>
+            <h1 style={{ fontSize: '28px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Upload your documents</h1>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '36px' }}>Upload your ID and qualification certificate. Both will be scanned automatically.</p>
 
             {uploadBox(idFront, 'idFrontInput', 'Front side of ID Card', (f) => setIdFront(f))}
             {uploadBox(idBack, 'idBackInput', 'Back side of ID Card', (f) => setIdBack(f))}
 
             <div style={{ backgroundColor: CARD, borderRadius: '10px', padding: '16px 20px', marginBottom: '24px' }}>
-              <p style={{ fontSize: '13px', color: MUTED, marginBottom: '6px', fontWeight: 600 }}>Requirements</p>
+              <p style={{ fontSize: '13px', color: MUTED, marginBottom: '6px', fontWeight: 600 }}>ID Requirements</p>
               {['Please use the original ID; copies or screenshots are not accepted.', 'Ensure all information is visible; damaged or expired IDs are not accepted.', 'Turn off any beauty filters or photo enhancements.'].map((t, i) => (
                 <p key={i} style={{ fontSize: '13px', color: MUTED, marginBottom: '4px' }}>◆ {t}</p>
               ))}
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '13px', color: MUTED, marginBottom: '10px', fontWeight: 600 }}>Qualification Certificate <span style={{ fontWeight: 400 }}>(optional)</span></p>
-              {uploadBox(qualFile, 'qualInput', '', (f) => setQualFile(f))}
+            {/* Qualification Certificate — now required */}
+            <div style={{ marginBottom: '8px' }}>
+              <p style={{ fontSize: '13px', fontWeight: 600, color: TEXT, marginBottom: '4px' }}>Qualification Certificate</p>
+              <p style={{ fontSize: '12px', color: MUTED, marginBottom: '10px' }}>Upload your degree, diploma, or teaching certificate.</p>
+            </div>
+            {uploadBox(qualFile, 'qualInput', '', (f) => setQualFile(f))}
+
+            <div style={{ backgroundColor: CARD, borderRadius: '10px', padding: '16px 20px', marginBottom: '24px' }}>
+              <p style={{ fontSize: '13px', color: MUTED, marginBottom: '6px', fontWeight: 600 }}>Certificate Requirements</p>
+              {['Must show your full name and the institution name.', 'Accepted formats: .jpg, .jpeg, .png, .pdf.', 'The document must be clear and legible.'].map((t, i) => (
+                <p key={i} style={{ fontSize: '13px', color: MUTED, marginBottom: '4px' }}>◆ {t}</p>
+              ))}
             </div>
 
             {btnPrimary('Continue', () => {
               if (!idFront) {
                 setStatusMsg('Please upload the front of your ID.')
+                return
+              }
+              if (!qualFile) {
+                setStatusMsg('Please upload your qualification certificate.')
                 return
               }
               setStatusMsg('')
@@ -327,7 +357,7 @@ export default function Home() {
               <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '40px 20px', textAlign: 'center', marginBottom: '24px' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>📷</div>
                 <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Camera access required</h2>
-                <p style={{ fontSize: '14px', color: MUTED, marginBottom: '24px' }}>When prompted, please enable camera access to continue. We can't verify you without your camera.</p>
+                <p style={{ fontSize: '14px', color: MUTED, marginBottom: '24px' }}>When prompted, please enable camera access to continue.</p>
                 {btnPrimary('Enable camera', () => { setCameraError(false); startCamera() })}
               </div>
             ) : (
@@ -340,7 +370,6 @@ export default function Home() {
                     muted
                     style={{ width: '100%', display: 'block', maxHeight: '400px', objectFit: 'cover' }}
                   />
-                  {/* Oval overlay */}
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <div style={{ width: '220px', height: '280px', border: `3px solid ${DARK}`, borderRadius: '50%', boxShadow: '0 0 0 9999px rgba(255,255,255,0.5)' }} />
                   </div>
@@ -378,9 +407,10 @@ export default function Home() {
                 { label: 'South African ID Number', value: idNumber },
                 { label: 'Residence', value: '🇿🇦 South Africa' },
                 { label: 'ID Document', value: idFront ? `✓ ${idFront.name}` : 'Not uploaded' },
+                { label: 'Qualification Certificate', value: qualFile ? `✓ ${qualFile.name}` : 'Not uploaded' },
                 { label: 'Selfie', value: selfieFile ? '✓ Captured' : 'Not taken' },
               ].map((row, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: i < 4 ? `1px solid ${BORDER}` : 'none' }}>
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: i < 5 ? `1px solid ${BORDER}` : 'none' }}>
                   <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
                   <span style={{ fontSize: '14px', fontWeight: 600, color: DARK }}>{row.value}</span>
                 </div>
@@ -421,7 +451,7 @@ export default function Home() {
 
             {validation && (
               <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Verification Summary</p>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>ID Verification Summary</p>
                 {[
                   { label: 'ID format', value: validation.isValid ? '✓ Valid' : '✗ Invalid', ok: validation.isValid },
                   { label: 'Date of birth', value: validation.details?.dateOfBirth || '—', ok: true },
@@ -430,6 +460,24 @@ export default function Home() {
                   { label: 'Name match', value: validation.nameMatch ? '✓ Matched' : '⚠ Not found', ok: validation.nameMatch },
                 ].map((row, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 4 ? `1px solid ${BORDER}` : 'none' }}>
+                    <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: row.ok ? DARK : '#e53e3e' }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Qualification Certificate Result */}
+            {qualResult && (
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Qualification Certificate</p>
+                {[
+                  { label: 'Document readable', value: qualResult.extracted ? '✓ Yes' : '✗ No', ok: qualResult.extracted },
+                  { label: 'Name found in certificate', value: qualResult.nameFound ? '✓ Matched' : '⚠ Not found', ok: qualResult.nameFound },
+                  { label: 'Certificate has content', value: qualResult.hasContent ? '✓ Yes' : '⚠ Unclear', ok: qualResult.hasContent },
+                  { label: 'Status', value: qualResult.status === 'passed' ? '✓ Passed' : '⚠ Needs review', ok: qualResult.status === 'passed' },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 3 ? `1px solid ${BORDER}` : 'none' }}>
                     <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: row.ok ? DARK : '#e53e3e' }}>{row.value}</span>
                   </div>
@@ -452,7 +500,7 @@ export default function Home() {
             )}
 
             {faceMatch && (
-              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
                 <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Face Match</p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
                   <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
@@ -462,12 +510,6 @@ export default function Home() {
                   <span style={{ fontSize: '14px', color: MUTED }}>Confidence</span>
                   <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{faceMatch.confidence}%</span>
                 </div>
-              </div>
-            )}
-
-            {faceMatch && (
-              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '24px' }}>
-                ...
               </div>
             )}
 
@@ -490,7 +532,7 @@ export default function Home() {
             )}
 
             <button
-              onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFront(null); setIdBack(null); setQualFile(null); setSelfieFile(null); setValidation(null); setFaceMatch(null); setAuthenticity(null); setStatusMsg('') }}
+              onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFront(null); setIdBack(null); setQualFile(null); setSelfieFile(null); setValidation(null); setFaceMatch(null); setAuthenticity(null); setQualResult(null); setStatusMsg('') }}
               style={{ width: '100%', backgroundColor: '#fff', color: DARK, border: `1.5px solid ${BORDER}`, borderRadius: '8px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
             >
               Start new verification
