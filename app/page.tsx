@@ -1,7 +1,8 @@
 'use client'
 
-import { verifyWithProvider } from '../lib/kyc'
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { verifyWithProvider } from '../lib/kyc'
 import { supabase } from '../lib/supabase'
 import { extractTextFromImage } from '../lib/ocr'
 import { validateSAID, checkNameMatch, checkDocumentAuthenticity } from '../lib/validate'
@@ -34,6 +35,18 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [kycResult, setKycResult] = useState<any>(null)
+  const router = useRouter()
+
+  // Auth guard — redirect to sign in if not logged in
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/signin')
+      }
+    }
+    checkAuth()
+  }, [])
 
   const startCamera = async () => {
     try {
@@ -144,7 +157,7 @@ export default function Home() {
     setKycResult(kycCheck)
 
     // Save to Supabase
-   setLoadingMsg('Saving submission...')
+    setLoadingMsg('Saving submission...')
     const finalStatus = kycCheck.verified ? 'verified' : 'pending'
 
     // POPIA: hash the ID number before storing — never store raw ID numbers
@@ -154,8 +167,16 @@ export default function Home() {
     const hashArray = Array.from(new Uint8Array(hashBuffer))
     const idNumberHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 
+    // Get current user session
+    const { data: { session } } = await supabase.auth.getSession()
+
     await supabase.from('verifications').insert([
-      { full_name: fullName, id_number: idNumberHash, status: finalStatus }
+      {
+        full_name: fullName,
+        id_number: idNumberHash,
+        status: finalStatus,
+        user_id: session?.user?.id
+      }
     ])
 
     setLoading(false)
@@ -323,7 +344,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Qualification Certificate — now required */}
             <div style={{ marginBottom: '8px' }}>
               <p style={{ fontSize: '13px', fontWeight: 600, color: TEXT, marginBottom: '4px' }}>Qualification Certificate</p>
               <p style={{ fontSize: '12px', color: MUTED, marginBottom: '10px' }}>Upload your degree, diploma, or teaching certificate.</p>
@@ -475,7 +495,6 @@ export default function Home() {
               </div>
             )}
 
-            {/* Qualification Certificate Result */}
             {qualResult && (
               <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
                 <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Qualification Certificate</p>
