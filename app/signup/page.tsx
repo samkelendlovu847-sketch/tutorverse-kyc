@@ -8,6 +8,35 @@ const BORDER = '#E5E5E5'
 const CARD = '#F8F9FA'
 const MUTED = '#888888'
 
+interface PasswordStrength {
+  score: number
+  label: string
+  color: string
+  checks: {
+    length: boolean
+    uppercase: boolean
+    lowercase: boolean
+    number: boolean
+    symbol: boolean
+    notCommon: boolean
+  }
+}
+
+function getPasswordStrength(password: string): PasswordStrength {
+  const checks = {
+    length: password.length >= 12,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    number: /[0-9]/.test(password),
+    symbol: /[^A-Za-z0-9]/.test(password),
+    notCommon: !['password', '123456', 'qwerty', 'abc123', 'letmein', 'welcome', 'monkey', 'dragon'].some(w => password.toLowerCase().includes(w))
+  }
+  const score = Object.values(checks).filter(Boolean).length
+  const labels = ['', 'Very Weak', 'Weak', 'Fair', 'Strong', 'Very Strong', 'Excellent']
+  const colors = ['', '#E53E3E', '#E53E3E', '#DD6B20', '#D69E2E', '#38A169', '#2B6CB0']
+  return { score, label: labels[score] || '', color: colors[score] || '', checks }
+}
+
 export default function SignUp() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,6 +45,10 @@ export default function SignUp() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+
+  const strength = getPasswordStrength(password)
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -28,7 +61,6 @@ export default function SignUp() {
     boxSizing: 'border-box',
     color: DARK,
     fontFamily: 'inherit',
-    marginBottom: '12px',
   }
 
   const handleSignUp = async () => {
@@ -37,12 +69,16 @@ export default function SignUp() {
       setError('Please fill in all fields.')
       return
     }
+    if (strength.score < 4) {
+      setError('Please choose a stronger password.')
+      return
+    }
     if (password !== confirm) {
       setError('Passwords do not match.')
       return
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
+    if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      setError('Please enter a valid email address.')
       return
     }
     setLoading(true)
@@ -68,9 +104,7 @@ export default function SignUp() {
     setGoogleLoading(true)
     await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`
-      }
+      options: { redirectTo: `${window.location.origin}/` }
     })
   }
 
@@ -96,7 +130,6 @@ export default function SignUp() {
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Nav */}
       <nav style={{ borderBottom: `1px solid ${BORDER}`, padding: '0 32px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <span style={{ fontWeight: 700, fontSize: '18px', color: DARK }}>✕ Tutorverse</span>
         <span style={{ fontSize: '12px', color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>KYC Verification</span>
@@ -105,7 +138,6 @@ export default function SignUp() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 24px' }}>
         <div style={{ width: '100%', maxWidth: '420px' }}>
 
-          {/* Header */}
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <div style={{ width: '56px', height: '56px', backgroundColor: DARK, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <span style={{ color: '#fff', fontSize: '24px' }}>🛡</span>
@@ -129,22 +161,93 @@ export default function SignUp() {
             {googleLoading ? 'Redirecting...' : 'Continue with Google'}
           </button>
 
-          {/* Divider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <div style={{ flex: 1, height: '1px', backgroundColor: BORDER }} />
             <span style={{ fontSize: '13px', color: MUTED }}>or sign up with email</span>
             <div style={{ flex: 1, height: '1px', backgroundColor: BORDER }} />
           </div>
 
-          {/* Email & Password */}
+          {/* Email */}
           <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Email address</label>
-          <input type="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+          <input
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            style={{ ...inputStyle, marginBottom: '16px' }}
+          />
 
+          {/* Password with show/hide */}
           <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Password</label>
-          <input type="password" placeholder="At least 8 characters" value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} />
+          <div style={{ position: 'relative', marginBottom: '8px' }}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              placeholder="At least 12 characters"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              style={{ ...inputStyle, paddingRight: '48px' }}
+            />
+            <button
+              onClick={() => setShowPassword(!showPassword)}
+              style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: MUTED }}
+            >
+              {showPassword ? '🙈' : '👁'}
+            </button>
+          </div>
 
+          {/* Password strength meter */}
+          {password.length > 0 && (
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                {[1, 2, 3, 4, 5, 6].map(i => (
+                  <div key={i} style={{ flex: 1, height: '4px', borderRadius: '2px', backgroundColor: i <= strength.score ? strength.color : BORDER, transition: 'background-color 0.3s' }} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <span style={{ fontSize: '12px', color: strength.color, fontWeight: 600 }}>{strength.label}</span>
+                <span style={{ fontSize: '12px', color: MUTED }}>{strength.score}/6 requirements met</span>
+              </div>
+              <div style={{ backgroundColor: CARD, borderRadius: '8px', padding: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                {[
+                  { check: strength.checks.length, label: '12+ characters' },
+                  { check: strength.checks.uppercase, label: 'Uppercase letter' },
+                  { check: strength.checks.lowercase, label: 'Lowercase letter' },
+                  { check: strength.checks.number, label: 'Number' },
+                  { check: strength.checks.symbol, label: 'Symbol (!@#$...)' },
+                  { check: strength.checks.notCommon, label: 'Not a common word' },
+                ].map((item, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', color: item.check ? '#38A169' : MUTED }}>{item.check ? '✓' : '○'}</span>
+                    <span style={{ fontSize: '11px', color: item.check ? '#38A169' : MUTED }}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Confirm Password */}
           <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Confirm password</label>
-          <input type="password" placeholder="Repeat your password" value={confirm} onChange={e => setConfirm(e.target.value)} style={inputStyle} />
+          <div style={{ position: 'relative', marginBottom: '16px' }}>
+            <input
+              type={showConfirm ? 'text' : 'password'}
+              placeholder="Repeat your password"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              style={{ ...inputStyle, paddingRight: '48px', borderColor: confirm.length > 0 ? (confirm === password ? '#38A169' : '#E53E3E') : BORDER }}
+            />
+            <button
+              onClick={() => setShowConfirm(!showConfirm)}
+              style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px', color: MUTED }}
+            >
+              {showConfirm ? '🙈' : '👁'}
+            </button>
+          </div>
+          {confirm.length > 0 && confirm !== password && (
+            <p style={{ fontSize: '12px', color: '#E53E3E', marginBottom: '12px', marginTop: '-12px' }}>Passwords do not match</p>
+          )}
+          {confirm.length > 0 && confirm === password && (
+            <p style={{ fontSize: '12px', color: '#38A169', marginBottom: '12px', marginTop: '-12px' }}>✓ Passwords match</p>
+          )}
 
           {error && (
             <div style={{ backgroundColor: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px' }}>
@@ -161,8 +264,8 @@ export default function SignUp() {
 
           <button
             onClick={handleSignUp}
-            disabled={loading}
-            style={{ width: '100%', backgroundColor: loading ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
+            disabled={loading || strength.score < 4 || password !== confirm}
+            style={{ width: '100%', backgroundColor: (loading || strength.score < 4 || password !== confirm) ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: (loading || strength.score < 4 || password !== confirm) ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
           >
             {loading ? 'Creating account...' : 'Create account'}
           </button>
