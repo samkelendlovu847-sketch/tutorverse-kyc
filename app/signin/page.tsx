@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from '../../lib/supabase'
 
 const DARK = '#000000'
@@ -15,6 +16,8 @@ export default function SignIn() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  const captchaRef = useRef<HCaptcha>(null)
   const router = useRouter()
 
   const inputStyle: React.CSSProperties = {
@@ -38,11 +41,21 @@ export default function SignIn() {
       setError('Please fill in all fields.')
       return
     }
+    if (!captchaToken) {
+      setError('Please complete the captcha verification.')
+      return
+    }
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken }
+    })
     setLoading(false)
     if (error) {
       setError('Invalid email or password. Please try again.')
+      captchaRef.current?.resetCaptcha()
+      setCaptchaToken('')
     } else {
       router.push('/')
     }
@@ -61,7 +74,6 @@ export default function SignIn() {
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Nav */}
       <nav style={{ borderBottom: `1px solid ${BORDER}`, padding: '0 32px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <span style={{ fontWeight: 700, fontSize: '18px', color: DARK }}>✕ Tutorverse</span>
         <span style={{ fontSize: '12px', color: MUTED, textTransform: 'uppercase', letterSpacing: '0.05em' }}>KYC Verification</span>
@@ -70,7 +82,6 @@ export default function SignIn() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 24px' }}>
         <div style={{ width: '100%', maxWidth: '420px' }}>
 
-          {/* Header */}
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
             <div style={{ width: '56px', height: '56px', backgroundColor: DARK, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <span style={{ color: '#fff', fontSize: '24px' }}>✓</span>
@@ -85,7 +96,6 @@ export default function SignIn() {
             disabled={googleLoading}
             style={{ width: '100%', backgroundColor: '#fff', color: DARK, border: `1.5px solid ${BORDER}`, borderRadius: '10px', padding: '14px 16px', fontSize: '15px', fontWeight: 500, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '24px', transition: 'background 0.2s' }}
           >
-            {/* Google icon */}
             <svg width="20" height="20" viewBox="0 0 48 48">
               <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z"/>
               <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
@@ -95,14 +105,12 @@ export default function SignIn() {
             {googleLoading ? 'Redirecting...' : 'Continue with Google'}
           </button>
 
-          {/* Divider */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
             <div style={{ flex: 1, height: '1px', backgroundColor: BORDER }} />
             <span style={{ fontSize: '13px', color: MUTED }}>or sign in with email</span>
             <div style={{ flex: 1, height: '1px', backgroundColor: BORDER }} />
           </div>
 
-          {/* Email & Password */}
           <div style={{ marginBottom: '4px' }}>
             <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Email address</label>
             <input
@@ -114,7 +122,7 @@ export default function SignIn() {
             />
           </div>
 
-          <div style={{ marginBottom: '4px' }}>
+          <div style={{ marginBottom: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
               <label style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>Password</label>
               <a href="/forgot-password" style={{ fontSize: '12px', color: MUTED, textDecoration: 'none' }}>Forgot password?</a>
@@ -135,10 +143,20 @@ export default function SignIn() {
             </div>
           )}
 
+          {/* hCaptcha widget */}
+          <div style={{ marginBottom: '16px' }}>
+            <HCaptcha
+              ref={captchaRef}
+              sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
+              onVerify={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken('')}
+            />
+          </div>
+
           <button
             onClick={handleSignIn}
-            disabled={loading}
-            style={{ width: '100%', backgroundColor: loading ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: '8px', marginBottom: '24px' }}
+            disabled={loading || !captchaToken}
+            style={{ width: '100%', backgroundColor: (loading || !captchaToken) ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: (loading || !captchaToken) ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
           >
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
@@ -148,7 +166,6 @@ export default function SignIn() {
             <a href="/signup" style={{ color: DARK, fontWeight: 600, textDecoration: 'none' }}>Create one free</a>
           </p>
 
-          {/* Security note */}
           <div style={{ marginTop: '32px', padding: '16px', backgroundColor: CARD, borderRadius: '10px', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
             <span style={{ fontSize: '16px', flexShrink: 0 }}>🔒</span>
             <p style={{ fontSize: '12px', color: MUTED, margin: 0, lineHeight: '1.6' }}>

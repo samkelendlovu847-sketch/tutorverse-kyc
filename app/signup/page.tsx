@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from '../../lib/supabase'
 
 const DARK = '#000000'
@@ -47,6 +48,8 @@ export default function SignUp() {
   const [success, setSuccess] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
+  const captchaRef = useRef<HCaptcha>(null)
 
   const strength = getPasswordStrength(password)
 
@@ -81,11 +84,16 @@ export default function SignUp() {
       setError('Please enter a valid email address.')
       return
     }
+    if (!captchaToken) {
+      setError('Please complete the captcha verification.')
+      return
+    }
     setLoading(true)
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        captchaToken,
         data: {
           consent_given: true,
           consent_timestamp: new Date().toISOString()
@@ -95,6 +103,8 @@ export default function SignUp() {
     setLoading(false)
     if (error) {
       setError(error.message)
+      captchaRef.current?.resetCaptcha()
+      setCaptchaToken('')
     } else {
       setSuccess(true)
     }
@@ -167,7 +177,6 @@ export default function SignUp() {
             <div style={{ flex: 1, height: '1px', backgroundColor: BORDER }} />
           </div>
 
-          {/* Email */}
           <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Email address</label>
           <input
             type="email"
@@ -177,7 +186,6 @@ export default function SignUp() {
             style={{ ...inputStyle, marginBottom: '16px' }}
           />
 
-          {/* Password with show/hide */}
           <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Password</label>
           <div style={{ position: 'relative', marginBottom: '8px' }}>
             <input
@@ -195,7 +203,6 @@ export default function SignUp() {
             </button>
           </div>
 
-          {/* Password strength meter */}
           {password.length > 0 && (
             <div style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
@@ -225,7 +232,6 @@ export default function SignUp() {
             </div>
           )}
 
-          {/* Confirm Password */}
           <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '6px' }}>Confirm password</label>
           <div style={{ position: 'relative', marginBottom: '16px' }}>
             <input
@@ -255,17 +261,26 @@ export default function SignUp() {
             </div>
           )}
 
-          {/* POPIA/GDPR Consent */}
           <div style={{ backgroundColor: CARD, borderRadius: '10px', padding: '14px 16px', marginBottom: '20px', fontSize: '12px', color: MUTED, lineHeight: '1.7' }}>
             🔒 By creating an account you agree that Tutorverse will collect and process your personal data for identity verification purposes in accordance with our{' '}
             <a href="/privacy" style={{ color: DARK, fontWeight: 600 }}>Privacy Policy</a>{' '}
             and POPIA. You may request deletion of your data at any time.
           </div>
 
+          {/* hCaptcha widget */}
+          <div style={{ marginBottom: '16px' }}>
+            <HCaptcha
+              ref={captchaRef}
+              sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
+              onVerify={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken('')}
+            />
+          </div>
+
           <button
             onClick={handleSignUp}
-            disabled={loading || strength.score < 4 || password !== confirm}
-            style={{ width: '100%', backgroundColor: (loading || strength.score < 4 || password !== confirm) ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: (loading || strength.score < 4 || password !== confirm) ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
+            disabled={loading || strength.score < 4 || password !== confirm || !captchaToken}
+            style={{ width: '100%', backgroundColor: (loading || strength.score < 4 || password !== confirm || !captchaToken) ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: (loading || strength.score < 4 || password !== confirm || !captchaToken) ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
           >
             {loading ? 'Creating account...' : 'Create account'}
           </button>
