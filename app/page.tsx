@@ -585,6 +585,13 @@ export default function Home() {
             )}
 
             <button
+              onClick={() => router.push('/dashboard')}
+              style={{ width: '100%', backgroundColor: DARK, color: '#fff', border: 'none', borderRadius: '8px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer', marginBottom: '12px' }}
+            >
+              View my dashboard →
+            </button>
+
+            <button
               onClick={() => { setStep(1); setFullName(''); setIdNumber(''); setIdFront(null); setIdBack(null); setQualFile(null); setSelfieFile(null); setValidation(null); setFaceMatch(null); setAuthenticity(null); setQualResult(null); setStatusMsg('') }}
               style={{ width: '100%', backgroundColor: '#fff', color: DARK, border: `1.5px solid ${BORDER}`, borderRadius: '8px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
             >
