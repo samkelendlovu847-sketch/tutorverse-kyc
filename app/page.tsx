@@ -14,6 +14,42 @@ const BORDER = '#E5E5E5'
 const TEXT = '#000000'
 const MUTED = '#888888'
 
+const analyseQualification = (ocrText: string, fullName: string) => {
+  const text = ocrText || ''
+  const lower = text.toLowerCase()
+  const nameMatched = fullName && text.toLowerCase().includes(fullName.toLowerCase())
+  const institutionMatch = text.match(/\b([A-Z][A-Za-z]*(?:\s+(?:University|College|Institute|Academy|School|Polytechnic|Faculty|Campus|Technikon)))(?:\b|,)/i)
+  const institutionName = institutionMatch ? institutionMatch[1] : ''
+  const qualificationType = lower.includes('degree')
+    ? 'degree'
+    : lower.includes('diploma')
+      ? 'diploma'
+      : lower.includes('certificate')
+        ? 'certificate'
+        : ''
+  const yearMatch = text.match(/\b(19|20)\d{2}\b/)
+  const yearFound = yearMatch ? yearMatch[0] : ''
+  const isAccredited = /accredit|registered|saqa|che|heqc|technikon/i.test(text)
+  const status = nameMatched && qualificationType ? 'verified' : 'review_needed'
+  const confidence = Math.min(100, (nameMatched ? 40 : 0) + (qualificationType ? 30 : 0) + (yearFound ? 20 : 0) + (isAccredited ? 10 : 0))
+  const flags: string[] = []
+  if (!nameMatched) flags.push('Name not found on certificate')
+  if (!institutionName) flags.push('Institution not detected')
+  if (!qualificationType) flags.push('Qualification type not identified')
+  if (!yearFound) flags.push('Year not found')
+  return {
+    institutionName,
+    qualificationType,
+    nameMatched,
+    institutionFound: !!institutionName,
+    isAccredited,
+    yearFound,
+    status,
+    confidence,
+    flags,
+  }
+}
+
 export default function Home() {
   const [step, setStep] = useState(1)
   const [fullName, setFullName] = useState('')
@@ -37,13 +73,11 @@ export default function Home() {
   const [kycResult, setKycResult] = useState<any>(null)
   const router = useRouter()
 
-  // Auth guard — redirect to sign in if not logged in
+  // Auth guard
   useEffect(() => {
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
-        router.push('/signin')
-      }
+      if (!session) router.push('/signin')
     }
     checkAuth()
   }, [])
@@ -113,19 +147,23 @@ export default function Home() {
 
     // OCR on qualification certificate
     setLoadingMsg('Reading your qualification certificate...')
-    let qualText = ''
     try {
       if (qualFile) {
-        qualText = await extractTextFromImage(qualFile)
-        const hasInstitution = qualText.length > 30
-        const hasTutorName = checkNameMatch(fullName, qualText)
-        setQualResult({
-          extracted: qualText.length > 0,
-          textLength: qualText.length,
-          nameFound: hasTutorName,
-          hasContent: hasInstitution,
-          status: hasInstitution && hasTutorName ? 'passed' : 'review_needed'
-        })
+        const qualText = await extractTextFromImage(qualFile)
+        const analysis = analyseQualification(qualText, fullName)
+        setQualResult(analysis)
+
+        // Save to Supabase qualifications table (POPIA: only first 500 chars of OCR)
+        const { data: { session: qualSession } } = await supabase.auth.getSession()
+        await supabase.from('qualifications').insert([{
+          user_id: qualSession?.user?.id,
+          institution_name: analysis.institutionName,
+          qualification_type: analysis.qualificationType,
+          ocr_text: qualText.substring(0, 500),
+          name_matched: analysis.nameMatched,
+          institution_verified: analysis.isAccredited,
+          status: analysis.status
+        }])
       }
     } catch { }
 
@@ -160,24 +198,20 @@ export default function Home() {
     setLoadingMsg('Saving submission...')
     const finalStatus = kycCheck.verified ? 'verified' : 'pending'
 
-    // POPIA: hash the ID number before storing — never store raw ID numbers
+    // POPIA: hash the ID number before storing
     const encoder = new TextEncoder()
     const data = encoder.encode(idNumber)
     const hashBuffer = await crypto.subtle.digest('SHA-256', data)
     const hashArray = Array.from(new Uint8Array(hashBuffer))
     const idNumberHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
 
-    // Get current user session
     const { data: { session } } = await supabase.auth.getSession()
-
-    await supabase.from('verifications').insert([
-      {
-        full_name: fullName,
-        id_number: idNumberHash,
-        status: finalStatus,
-        user_id: session?.user?.id
-      }
-    ])
+    await supabase.from('verifications').insert([{
+      full_name: fullName,
+      id_number: idNumberHash,
+      status: finalStatus,
+      user_id: session?.user?.id
+    }])
 
     setLoading(false)
     setLoadingMsg('')
@@ -290,7 +324,7 @@ export default function Home() {
                 type="text"
                 placeholder="e.g. Daniel Wright"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => setFullName(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
                 style={inputStyle}
               />
             </div>
@@ -358,14 +392,8 @@ export default function Home() {
             </div>
 
             {btnPrimary('Continue', () => {
-              if (!idFront) {
-                setStatusMsg('Please upload the front of your ID.')
-                return
-              }
-              if (!qualFile) {
-                setStatusMsg('Please upload your qualification certificate.')
-                return
-              }
+              if (!idFront) { setStatusMsg('Please upload the front of your ID.'); return }
+              if (!qualFile) { setStatusMsg('Please upload your qualification certificate.'); return }
               setStatusMsg('')
               setStep(3)
             })}
@@ -391,13 +419,7 @@ export default function Home() {
             ) : (
               <div>
                 <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#000', marginBottom: '24px' }}>
-                  <video
-                    ref={videoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    style={{ width: '100%', display: 'block', maxHeight: '400px', objectFit: 'cover' }}
-                  />
+                  <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', display: 'block', maxHeight: '400px', objectFit: 'cover' }} />
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                     <div style={{ width: '220px', height: '280px', border: `3px solid ${DARK}`, borderRadius: '50%', boxShadow: '0 0 0 9999px rgba(255,255,255,0.5)' }} />
                   </div>
@@ -407,13 +429,11 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-
                 <div style={{ backgroundColor: CARD, borderRadius: '10px', padding: '16px 20px', marginBottom: '24px' }}>
                   {['Your face and background will be recorded.', 'Maximize screen brightness.', 'Ensure you are in a well lit area.', 'No glasses, mask, or hat.'].map((t, i) => (
                     <p key={i} style={{ fontSize: '13px', color: MUTED, marginBottom: '4px' }}>◆ {t}</p>
                   ))}
                 </div>
-
                 {cameraReady && countdown === null && btnPrimary('📸 Take selfie', takeSelfie)}
                 {!cameraReady && <p style={{ textAlign: 'center', color: MUTED, fontSize: '14px' }}>Starting camera...</p>}
               </div>
@@ -444,10 +464,6 @@ export default function Home() {
                 </div>
               ))}
             </div>
-
-            <p style={{ fontSize: '13px', color: MUTED, marginBottom: '16px', textAlign: 'center', cursor: 'pointer' }}>
-              <span style={{ color: DARK, fontWeight: 600 }}>Wrong information? Go back to edit</span>
-            </p>
 
             {btnPrimary('Submit for Verification', handleSubmit)}
           </div>
@@ -499,16 +515,26 @@ export default function Home() {
               <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
                 <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Qualification Certificate</p>
                 {[
-                  { label: 'Document readable', value: qualResult.extracted ? '✓ Yes' : '✗ No', ok: qualResult.extracted },
-                  { label: 'Name found in certificate', value: qualResult.nameFound ? '✓ Matched' : '⚠ Not found', ok: qualResult.nameFound },
-                  { label: 'Certificate has content', value: qualResult.hasContent ? '✓ Yes' : '⚠ Unclear', ok: qualResult.hasContent },
-                  { label: 'Status', value: qualResult.status === 'passed' ? '✓ Passed' : '⚠ Needs review', ok: qualResult.status === 'passed' },
+                  { label: 'Name found', value: qualResult.nameMatched ? '✓ Matched' : '⚠ Not found', ok: qualResult.nameMatched },
+                  { label: 'Institution', value: qualResult.institutionName ? qualResult.institutionName.charAt(0).toUpperCase() + qualResult.institutionName.slice(1) : '⚠ Not detected', ok: qualResult.institutionFound },
+                  { label: 'Accredited', value: qualResult.isAccredited ? '✓ Yes' : '⚠ Unconfirmed', ok: qualResult.isAccredited },
+                  { label: 'Qualification type', value: qualResult.qualificationType ? qualResult.qualificationType.charAt(0).toUpperCase() + qualResult.qualificationType.slice(1) : '⚠ Unknown', ok: !!qualResult.qualificationType },
+                  { label: 'Year', value: qualResult.yearFound || '⚠ Not found', ok: !!qualResult.yearFound },
+                  { label: 'Confidence', value: `${qualResult.confidence}/100`, ok: qualResult.confidence >= 60 },
+                  { label: 'Status', value: qualResult.status === 'verified' ? '✓ Verified' : qualResult.status === 'review_needed' ? '⚠ Needs review' : '✗ Failed', ok: qualResult.status === 'verified' },
                 ].map((row, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 3 ? `1px solid ${BORDER}` : 'none' }}>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 6 ? `1px solid ${BORDER}` : 'none' }}>
                     <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: row.ok ? DARK : '#e53e3e' }}>{row.value}</span>
                   </div>
                 ))}
+                {qualResult.flags && qualResult.flags.length > 0 && (
+                  <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#FFF5F5', borderRadius: '8px' }}>
+                    {qualResult.flags.map((flag: string, i: number) => (
+                      <p key={i} style={{ fontSize: '12px', color: '#C53030', margin: '2px 0' }}>⚠ {flag}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
