@@ -509,8 +509,7 @@ export default function Home() {
         )}
 
         {/* STEP 6 — Result */}
-        {step === 6 && (
-          {/* Duplicate submission notice */}
+        {/* Duplicate submission notice */}
             {validation?.duplicate && (
               <div style={{ backgroundColor: validation.pendingExists ? '#FFFFF0' : '#F0FFF4', border: `1px solid ${validation.pendingExists ? '#FAF089' : '#C6F6D5'}`, borderRadius: '16px', padding: '28px', textAlign: 'center', marginBottom: '20px' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>
@@ -533,7 +532,7 @@ export default function Home() {
                 </button>
               </div>
             )}
-
+        {step === 6 && (
           <div>
             <div style={{ textAlign: 'center', marginBottom: '32px' }}>
               <div style={{ width: '72px', height: '72px', backgroundColor: DARK, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
