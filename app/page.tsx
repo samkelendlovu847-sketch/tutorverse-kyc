@@ -138,6 +138,33 @@ export default function Home() {
     setLoading(true)
     setStep(5)
 
+    // Check for duplicate submission
+    setLoadingMsg('Checking existing submissions...')
+    const { data: { session: checkSession } } = await supabase.auth.getSession()
+    if (checkSession) {
+      const { data: existing } = await supabase
+        .from('verifications')
+        .select('id, status')
+        .eq('user_id', checkSession.user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (existing && existing.status === 'verified') {
+        setLoading(false)
+        setStep(6)
+        setValidation({ isValid: true, nameMatch: true, details: {}, duplicate: true })
+        return
+      }
+
+      if (existing && existing.status === 'pending') {
+        setLoading(false)
+        setStep(6)
+        setValidation({ isValid: true, nameMatch: true, details: {}, duplicate: true, pendingExists: true })
+        return
+      }
+    }
+
     // OCR on ID document
     setLoadingMsg('Reading your ID document...')
     let idText = ''
@@ -483,6 +510,30 @@ export default function Home() {
 
         {/* STEP 6 — Result */}
         {step === 6 && (
+          {/* Duplicate submission notice */}
+            {validation?.duplicate && (
+              <div style={{ backgroundColor: validation.pendingExists ? '#FFFFF0' : '#F0FFF4', border: `1px solid ${validation.pendingExists ? '#FAF089' : '#C6F6D5'}`, borderRadius: '16px', padding: '28px', textAlign: 'center', marginBottom: '20px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>
+                  {validation.pendingExists ? '⏳' : '✓'}
+                </div>
+                <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>
+                  {validation.pendingExists ? 'Verification Already Submitted' : 'You Are Already Verified!'}
+                </h2>
+                <p style={{ fontSize: '14px', color: MUTED, marginBottom: '20px' }}>
+                  {validation.pendingExists
+                    ? 'You already have a verification pending review. Please wait for it to be processed before submitting again.'
+                    : 'Your identity has already been verified. You can view your verified badge on your dashboard.'
+                  }
+                </p>
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  style={{ backgroundColor: DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 28px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  View my dashboard →
+                </button>
+              </div>
+            )}
+
           <div>
             <div style={{ textAlign: 'center', marginBottom: '32px' }}>
               <div style={{ width: '72px', height: '72px', backgroundColor: DARK, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
