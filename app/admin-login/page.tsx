@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
@@ -16,6 +16,14 @@ export default function AdminLogin() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
+
+  // Check for error from callback
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'not_admin') {
+      setError('Your Google account does not have admin access.')
+    }
+  }, [])
 
   const checkAdminAndRedirect = async (userId: string) => {
     const { data: adminData } = await supabase
@@ -53,14 +61,12 @@ export default function AdminLogin() {
   const handleGoogleLogin = async () => {
     setError('')
     setGoogleLoading(true)
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/admin-callback`
       }
     })
-
     if (error) {
       setError('Google sign in failed.')
       setGoogleLoading(false)
