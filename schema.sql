@@ -92,3 +92,36 @@ using (auth.uid() = id);
 create policy "Service role only for admin management"
 on admin_users for all
 using (auth.role() = 'service_role');
+
+-- ============================================
+-- AUDIT LOG TABLE (ISO 27001 compliance)
+-- ============================================
+create table if not exists audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  action text not null,
+  resource text,
+  resource_id uuid,
+  details jsonb,
+  ip_address text,
+  created_at timestamptz default now()
+);
+
+alter table audit_logs enable row level security;
+
+create policy "Service role has full access to audit logs"
+on audit_logs for all
+using (auth.role() = 'service_role');
+
+-- ============================================
+-- DATA RETENTION FUNCTION (POPIA compliance)
+-- Auto-deletes records older than 2 years
+-- ============================================
+create or replace function delete_old_records()
+returns void as $$
+begin
+  delete from verifications where created_at < now() - interval '2 years';
+  delete from qualifications where created_at < now() - interval '2 years';
+  delete from audit_logs where created_at < now() - interval '2 years';
+end;
+$$ language plpgsql;

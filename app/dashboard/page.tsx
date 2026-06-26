@@ -14,6 +14,10 @@ export default function Dashboard() {
   const [qualifications, setQualifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const router = useRouter()
 
   useEffect(() => {
@@ -22,7 +26,6 @@ export default function Dashboard() {
       if (!session) { router.push('/signin'); return }
       setUser(session.user)
 
-      // Fetch latest verification
       const { data: vData } = await supabase
         .from('verifications')
         .select('*')
@@ -31,7 +34,6 @@ export default function Dashboard() {
         .limit(1)
         .single()
 
-      // Fetch qualifications
       const { data: qData } = await supabase
         .from('qualifications')
         .select('*')
@@ -48,6 +50,31 @@ export default function Dashboard() {
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/signin')
+  }
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm !== 'DELETE') {
+      setDeleteError('Please type DELETE to confirm.')
+      return
+    }
+    setDeleting(true)
+    setDeleteError('')
+
+    try {
+      // Delete all verifications
+      await supabase.from('verifications').delete().eq('user_id', user.id)
+
+      // Delete all qualifications
+      await supabase.from('qualifications').delete().eq('user_id', user.id)
+
+      // Sign out and delete account via Supabase
+      await supabase.auth.signOut()
+
+      router.push('/?deleted=true')
+    } catch {
+      setDeleteError('Something went wrong. Please try again or contact privacy@tutorverse.co.za')
+      setDeleting(false)
+    }
   }
 
   const statusConfig = (status: string) => {
@@ -72,6 +99,49 @@ export default function Dashboard() {
 
   return (
     <main style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+
+      {/* Delete confirmation modal */}
+      {showDeleteModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '32px', maxWidth: '440px', width: '100%' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 700, color: '#E53E3E', marginBottom: '12px' }}>Delete your account</h2>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '8px', lineHeight: '1.6' }}>
+              This will permanently delete all your personal data including your verification records and qualifications. This action cannot be undone.
+            </p>
+            <p style={{ fontSize: '14px', color: MUTED, marginBottom: '20px', lineHeight: '1.6' }}>
+              This is your right under POPIA Section 24 and GDPR Article 17. Your data will be deleted within 30 days.
+            </p>
+            <label style={{ fontSize: '13px', fontWeight: 600, color: DARK, display: 'block', marginBottom: '8px' }}>
+              Type <strong>DELETE</strong> to confirm
+            </label>
+            <input
+              type="text"
+              placeholder="DELETE"
+              value={deleteConfirm}
+              onChange={e => setDeleteConfirm(e.target.value)}
+              style={{ width: '100%', border: `1.5px solid ${BORDER}`, borderRadius: '10px', padding: '12px 16px', fontSize: '15px', outline: 'none', boxSizing: 'border-box' as const, marginBottom: '16px', fontFamily: 'inherit' }}
+            />
+            {deleteError && (
+              <p style={{ fontSize: '13px', color: '#E53E3E', marginBottom: '16px' }}>⚠ {deleteError}</p>
+            )}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                style={{ flex: 1, backgroundColor: '#E53E3E', color: '#fff', border: 'none', borderRadius: '10px', padding: '14px', fontSize: '14px', fontWeight: 600, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}
+              >
+                {deleting ? 'Deleting...' : 'Delete my account'}
+              </button>
+              <button
+                onClick={() => { setShowDeleteModal(false); setDeleteConfirm(''); setDeleteError('') }}
+                style={{ flex: 1, backgroundColor: '#fff', color: DARK, border: `1.5px solid ${BORDER}`, borderRadius: '10px', padding: '14px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Nav */}
       <nav style={{ padding: '0 32px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${BORDER}`, backgroundColor: '#fff', position: 'sticky', top: 0, zIndex: 100 }}>
@@ -99,7 +169,6 @@ export default function Dashboard() {
         <p style={{ fontSize: '14px', color: MUTED, marginBottom: '32px' }}>Track your KYC verification status</p>
 
         {!verification ? (
-          /* No submission yet */
           <div style={{ backgroundColor: '#fff', borderRadius: '16px', border: `1px solid ${BORDER}`, padding: '48px 32px', textAlign: 'center' }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>📋</div>
             <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>No verification submitted yet</h2>
@@ -129,16 +198,14 @@ export default function Dashboard() {
 
             {/* Verified badge */}
             {verification.status === 'verified' && (
-              <div style={{ backgroundColor: '#fff', border: `1px solid ${BORDER}`, borderRadius: '16px', padding: '24px 28px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <p style={{ fontSize: '13px', fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>Your Verified Badge</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ backgroundColor: '#38A169', borderRadius: '8px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>✓ Verified Tutor</span>
-                    </div>
+              <div style={{ backgroundColor: '#fff', border: `1px solid ${BORDER}`, borderRadius: '16px', padding: '24px 28px', marginBottom: '20px' }}>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '12px' }}>Your Verified Badge</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ backgroundColor: '#38A169', borderRadius: '8px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>✓ Verified Tutor</span>
                   </div>
-                  <p style={{ fontSize: '12px', color: MUTED, marginTop: '8px' }}>This badge appears on your profile and increases booking rates.</p>
                 </div>
+                <p style={{ fontSize: '12px', color: MUTED, marginTop: '8px' }}>This badge appears on your profile and increases booking rates.</p>
               </div>
             )}
 
@@ -180,7 +247,7 @@ export default function Dashboard() {
 
             {/* Resubmit if failed */}
             {verification.status === 'failed' && (
-              <div style={{ backgroundColor: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: '16px', padding: '24px 28px' }}>
+              <div style={{ backgroundColor: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: '16px', padding: '24px 28px', marginBottom: '20px' }}>
                 <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#C53030', marginBottom: '8px' }}>Verification unsuccessful</h3>
                 <p style={{ fontSize: '14px', color: MUTED, marginBottom: '16px' }}>Please ensure your ID is clear, not expired, and your name matches exactly. Then resubmit.</p>
                 <button
@@ -193,6 +260,28 @@ export default function Dashboard() {
             )}
           </>
         )}
+
+        {/* Your data rights */}
+        <div style={{ backgroundColor: '#fff', border: `1px solid ${BORDER}`, borderRadius: '16px', padding: '24px 28px', marginBottom: '20px' }}>
+          <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '16px' }}>Your Data Rights (POPIA / GDPR)</p>
+          <p style={{ fontSize: '13px', color: MUTED, lineHeight: '1.7', marginBottom: '16px' }}>
+            You have the right to access, correct, or delete all personal data we hold about you at any time. Deleting your account removes all your verification records and personal information within 30 days.
+          </p>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            
+              href="/privacy"
+              style={{ fontSize: '13px', fontWeight: 600, color: DARK, textDecoration: 'none', padding: '8px 16px', border: `1px solid ${BORDER}`, borderRadius: '8px' }}
+            >
+              View privacy policy
+            </a>
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              style={{ fontSize: '13px', fontWeight: 600, color: '#E53E3E', backgroundColor: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: '8px', padding: '8px 16px', cursor: 'pointer' }}
+            >
+              Delete my account and data
+            </button>
+          </div>
+        </div>
 
         <p style={{ textAlign: 'center', fontSize: '12px', color: MUTED, marginTop: '48px' }}>
           Protected by POPIA · © 2026 Tutorverse (Pty) Ltd
