@@ -268,7 +268,7 @@ export default function Dashboard() {
             You have the right to access, correct, or delete all personal data we hold about you at any time. Deleting your account removes all your verification records and personal information within 30 days.
           </p>
           <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            
+            <a
               href="/privacy"
               style={{ fontSize: '13px', fontWeight: 600, color: DARK, textDecoration: 'none', padding: '8px 16px', border: `1px solid ${BORDER}`, borderRadius: '8px' }}
             >
