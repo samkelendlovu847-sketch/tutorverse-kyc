@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from '../../lib/supabase'
 
 const DARK = '#000000'
@@ -13,6 +14,8 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState('')
+  const captchaRef = useRef<HCaptcha>(null)
 
   const handleReset = async () => {
     setError('')
@@ -24,13 +27,19 @@ export default function ForgotPassword() {
       setError('Please enter a valid email address.')
       return
     }
+    if (!captchaToken) {
+      setError('Please complete the captcha verification.')
+      return
+    }
     setLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`
+      redirectTo: `${window.location.origin}/auth/confirm?type=recovery&next=/reset-password`
     })
     setLoading(false)
     if (error) {
       setError(error.message)
+      captchaRef.current?.resetCaptcha()
+      setCaptchaToken('')
     } else {
       setSuccess(true)
     }
@@ -91,10 +100,19 @@ export default function ForgotPassword() {
             </div>
           )}
 
+          <div style={{ marginBottom: '16px' }}>
+            <HCaptcha
+              ref={captchaRef}
+              sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
+              onVerify={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken('')}
+            />
+          </div>
+
           <button
             onClick={handleReset}
-            disabled={loading}
-            style={{ width: '100%', backgroundColor: loading ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
+            disabled={loading || !captchaToken}
+            style={{ width: '100%', backgroundColor: (loading || !captchaToken) ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: (loading || !captchaToken) ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
           >
             {loading ? 'Sending reset link...' : 'Send reset link'}
           </button>
