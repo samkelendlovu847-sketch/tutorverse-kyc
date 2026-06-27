@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from '../../lib/supabase'
@@ -19,7 +19,12 @@ export default function SignIn() {
   const [captchaToken, setCaptchaToken] = useState('')
   const captchaRef = useRef<HCaptcha>(null)
   const router = useRouter()
-
+    useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'invalid_link') {
+      setError('Your link has expired or is invalid. Please request a new one.')
+    }
+  }, [])
   const inputStyle: React.CSSProperties = {
     width: '100%',
     backgroundColor: '#fff',
