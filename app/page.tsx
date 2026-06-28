@@ -372,7 +372,10 @@ export default function Home() {
             </div>
 
             <p style={{ fontSize: '12px', color: MUTED, marginBottom: '16px', textAlign: 'center' }}>
-              By continuing, I agree to the <span style={{ color: DARK, fontWeight: 600, cursor: 'pointer' }}>Terms of Use</span> and <span style={{ color: DARK, fontWeight: 600, cursor: 'pointer' }}>Privacy Policy</span>.
+              By continuing, I agree to the{' '}
+              <a href="/terms" target="_blank" style={{ color: DARK, fontWeight: 600, textDecoration: 'none' }}>Terms of Use</a>
+              {' '}and{' '}
+              <a href="/privacy" target="_blank" style={{ color: DARK, fontWeight: 600, textDecoration: 'none' }}>Privacy Policy</a>.
             </p>
 
             {btnPrimary('Continue', () => {
