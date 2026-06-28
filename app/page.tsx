@@ -320,7 +320,7 @@ export default function Home() {
     <main style={{ minHeight: '100vh', backgroundColor: '#fff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
 
       {/* Nav */}
-      <nav style={{ backgroundColor: '#fff', borderBottom: `1px solid ${BORDER}`, padding: '0 32px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
+      <nav style={{ backgroundColor: '#fff', borderBottom: `1px solid ${BORDER}`, padding: '0 clamp(16px, 4vw, 32px)', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '22px', fontWeight: 700, color: DARK }}>✕</span>
           <span style={{ color: DARK, fontWeight: 700, fontSize: '18px', letterSpacing: '-0.3px' }}>Tutorverse</span>
@@ -328,7 +328,7 @@ export default function Home() {
         <span style={{ color: MUTED, fontSize: '12px', letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>KYC Verification</span>
       </nav>
 
-      <div style={{ maxWidth: '560px', margin: '0 auto', padding: '48px 24px' }}>
+      +<div style={{ maxWidth: '560px', margin: '0 auto', padding: 'clamp(24px, 5vw, 48px) clamp(16px, 4vw, 24px)' }}>
 
         {/* STEP 1 — Personal Info */}
         {step === 1 && (
@@ -437,7 +437,7 @@ export default function Home() {
             <p style={{ fontSize: '14px', color: MUTED, marginBottom: '32px' }}>Position your face inside the oval for a quick scan.</p>
 
             {cameraError ? (
-              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '40px 20px', textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: 'clamp(20px, 5vw, 40px) 20px', textAlign: 'center', marginBottom: '24px' }}>
                 <div style={{ fontSize: '48px', marginBottom: '16px' }}>📷</div>
                 <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Camera access required</h2>
                 <p style={{ fontSize: '14px', color: MUTED, marginBottom: '24px' }}>When prompted, please enable camera access to continue.</p>
@@ -448,7 +448,7 @@ export default function Home() {
                 <div style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#000', marginBottom: '24px' }}>
                   <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', display: 'block', maxHeight: '400px', objectFit: 'cover' }} />
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                    <div style={{ width: '220px', height: '280px', border: `3px solid ${DARK}`, borderRadius: '50%', boxShadow: '0 0 0 9999px rgba(255,255,255,0.5)' }} />
+                    <div style={{ width: 'min(220px, 60vw)', height: 'min(280px, 75vw)', border: `3px solid ${DARK}`, borderRadius: '50%', boxShadow: '0 0 0 9999px rgba(255,255,255,0.5)' }} />
                   </div>
                   {countdown !== null && (
                     <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '80px', fontWeight: 700, color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
