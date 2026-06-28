@@ -534,103 +534,187 @@ export default function Home() {
             )}
         {step === 6 && (
           <div>
-            <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-              <div style={{ width: '72px', height: '72px', backgroundColor: DARK, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-                <span style={{ color: '#fff', fontSize: '32px' }}>⏳</span>
+            {/* Overall status header */}
+            {(() => {
+              const allChecks = [
+                validation?.isValid,
+                validation?.nameMatch,
+                authenticity?.isAuthentic,
+                faceMatch?.match,
+                qualResult?.nameMatched,
+                qualResult?.institutionFound,
+                kycResult?.verified,
+              ].filter(v => v !== undefined)
+              const passed = allChecks.filter(Boolean).length
+              const total = allChecks.length
+              const overallOk = passed >= Math.ceil(total * 0.6)
+
+              return (
+                <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                  <div style={{ width: '80px', height: '80px', backgroundColor: overallOk ? '#38A169' : '#D69E2E', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                    <span style={{ color: '#fff', fontSize: '36px' }}>{overallOk ? '✓' : '⏳'}</span>
+                  </div>
+                  <h1 style={{ fontSize: '24px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>
+                    {overallOk ? 'Looking Good!' : 'Under Review'}
+                  </h1>
+                  <p style={{ fontSize: '14px', color: MUTED, marginBottom: '16px' }}>
+                    {overallOk ? 'Your verification is nearly complete. An admin will review and confirm shortly.' : 'Some checks need manual review. We\'ll notify you within 15 minutes.'}
+                  </p>
+
+                  {/* Overall progress bar */}
+                  <div style={{ backgroundColor: '#F0F0F0', borderRadius: '999px', height: '8px', overflow: 'hidden', marginBottom: '8px' }}>
+                    <div style={{ width: `${(passed / total) * 100}%`, height: '100%', backgroundColor: overallOk ? '#38A169' : '#D69E2E', borderRadius: '999px', transition: 'width 0.5s ease' }} />
+                  </div>
+                  <p style={{ fontSize: '13px', color: MUTED }}>{passed} of {total} checks passed</p>
+                </div>
+              )
+            })()}
+
+            {/* Visual check summary */}
+            <div style={{ backgroundColor: '#fff', border: `1px solid ${BORDER}`, borderRadius: '16px', padding: '24px', marginBottom: '20px' }}>
+              <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '20px' }}>Verification Checks</p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {[
+                  {
+                    label: 'ID Format',
+                    icon: validation?.isValid ? '✓' : '✗',
+                    status: validation?.isValid ? 'pass' : 'fail',
+                    detail: validation?.isValid ? 'Valid SA ID' : 'Invalid format',
+                    show: !!validation
+                  },
+                  {
+                    label: 'Name Match',
+                    icon: validation?.nameMatch ? '✓' : '⚠',
+                    status: validation?.nameMatch ? 'pass' : 'warn',
+                    detail: validation?.nameMatch ? 'Name verified' : 'Not found in doc',
+                    show: !!validation
+                  },
+                  {
+                    label: 'Document',
+                    icon: authenticity?.isAuthentic ? '✓' : '✗',
+                    status: authenticity?.isAuthentic ? 'pass' : 'fail',
+                    detail: authenticity?.isAuthentic ? `Score ${authenticity.score}/100` : 'Document flagged',
+                    show: !!authenticity
+                  },
+                  {
+                    label: 'Face Match',
+                    icon: faceMatch?.match ? '✓' : '✗',
+                    status: faceMatch?.match ? 'pass' : 'fail',
+                    detail: faceMatch?.match ? `${faceMatch.confidence}% confidence` : 'No match found',
+                    show: !!faceMatch
+                  },
+                  {
+                    label: 'Qualification',
+                    icon: qualResult?.nameMatched ? '✓' : '⚠',
+                    status: qualResult?.nameMatched ? 'pass' : 'warn',
+                    detail: qualResult?.qualificationType ? qualResult.qualificationType.charAt(0).toUpperCase() + qualResult.qualificationType.slice(1) : 'Unknown type',
+                    show: !!qualResult
+                  },
+                  {
+                    label: 'Institution',
+                    icon: qualResult?.isAccredited ? '✓' : '⚠',
+                    status: qualResult?.isAccredited ? 'pass' : 'warn',
+                    detail: qualResult?.isAccredited ? 'Accredited' : 'Needs review',
+                    show: !!qualResult
+                  },
+                  {
+                    label: 'Identity Check',
+                    icon: kycResult?.verified ? '✓' : '⏳',
+                    status: kycResult?.verified ? 'pass' : 'warn',
+                    detail: kycResult?.verified ? 'Verified' : 'Pending review',
+                    show: !!kycResult
+                  },
+                  {
+                    label: 'Date of Birth',
+                    icon: validation?.details?.dateOfBirth ? '✓' : '⚠',
+                    status: validation?.details?.dateOfBirth ? 'pass' : 'warn',
+                    detail: validation?.details?.dateOfBirth || 'Not extracted',
+                    show: !!validation
+                  },
+                ].filter(c => c.show).map((check, i) => {
+                  const colors = {
+                    pass: { bg: '#F0FFF4', border: '#C6F6D5', icon: '#38A169', text: '#276749' },
+                    warn: { bg: '#FFFFF0', border: '#FAF089', icon: '#D69E2E', text: '#744210' },
+                    fail: { bg: '#FFF5F5', border: '#FED7D7', icon: '#E53E3E', text: '#822727' },
+                  }
+                  const c = colors[check.status as keyof typeof colors]
+                  return (
+                    <div key={i} style={{ backgroundColor: c.bg, border: `1px solid ${c.border}`, borderRadius: '12px', padding: '14px 16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <div style={{ width: '28px', height: '28px', backgroundColor: c.icon, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>{check.icon}</span>
+                      </div>
+                      <div>
+                        <p style={{ margin: '0 0 2px', fontSize: '13px', fontWeight: 600, color: DARK }}>{check.label}</p>
+                        <p style={{ margin: 0, fontSize: '12px', color: c.text }}>{check.detail}</p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-              <h1 style={{ fontSize: '24px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>Under Review</h1>
-              <p style={{ fontSize: '14px', color: MUTED, marginBottom: '4px' }}>Estimated review time: 15 Minute(s)</p>
-              <p style={{ fontSize: '13px', color: MUTED }}>You will receive a notification once the review is completed.</p>
             </div>
 
+            {/* Detailed results — collapsible */}
             {validation && (
               <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>ID Verification Summary</p>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>ID Details</p>
                 {[
-                  { label: 'ID format', value: validation.isValid ? '✓ Valid' : '✗ Invalid', ok: validation.isValid },
-                  { label: 'Date of birth', value: validation.details?.dateOfBirth || '—', ok: true },
-                  { label: 'Gender', value: validation.details?.gender || '—', ok: true },
-                  { label: 'Citizenship', value: validation.details?.citizenship || '—', ok: true },
-                  { label: 'Name match', value: validation.nameMatch ? '✓ Matched' : '⚠ Not found', ok: validation.nameMatch },
+                  { label: 'Date of birth', value: validation.details?.dateOfBirth || '—' },
+                  { label: 'Gender', value: validation.details?.gender || '—' },
+                  { label: 'Citizenship', value: validation.details?.citizenship || '—' },
                 ].map((row, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 4 ? `1px solid ${BORDER}` : 'none' }}>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 2 ? `1px solid ${BORDER}` : 'none' }}>
                     <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: row.ok ? DARK : '#e53e3e' }}>{row.value}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{row.value}</span>
                   </div>
                 ))}
               </div>
             )}
 
-            {qualResult && (
-              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Qualification Certificate</p>
-                {[
-                  { label: 'Name found', value: qualResult.nameMatched ? '✓ Matched' : '⚠ Not found', ok: qualResult.nameMatched },
-                  { label: 'Institution', value: qualResult.institutionName ? qualResult.institutionName.charAt(0).toUpperCase() + qualResult.institutionName.slice(1) : '⚠ Not detected', ok: qualResult.institutionFound },
-                  { label: 'Accredited', value: qualResult.isAccredited ? '✓ Yes' : '⚠ Unconfirmed', ok: qualResult.isAccredited },
-                  { label: 'Qualification type', value: qualResult.qualificationType ? qualResult.qualificationType.charAt(0).toUpperCase() + qualResult.qualificationType.slice(1) : '⚠ Unknown', ok: !!qualResult.qualificationType },
-                  { label: 'Year', value: qualResult.yearFound || '⚠ Not found', ok: !!qualResult.yearFound },
-                  { label: 'Confidence', value: `${qualResult.confidence}/100`, ok: qualResult.confidence >= 60 },
-                  { label: 'Status', value: qualResult.status === 'verified' ? '✓ Verified' : qualResult.status === 'review_needed' ? '⚠ Needs review' : '✗ Failed', ok: qualResult.status === 'verified' },
-                ].map((row, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: i < 6 ? `1px solid ${BORDER}` : 'none' }}>
-                    <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: row.ok ? DARK : '#e53e3e' }}>{row.value}</span>
-                  </div>
+            {qualResult?.flags && qualResult.flags.length > 0 && (
+              <div style={{ backgroundColor: '#FFF5F5', border: '1px solid #FED7D7', borderRadius: '12px', padding: '16px 20px', marginBottom: '16px' }}>
+                <p style={{ fontSize: '12px', fontWeight: 600, color: '#C53030', marginBottom: '8px' }}>⚠ Flags detected</p>
+                {qualResult.flags.map((flag: string, i: number) => (
+                  <p key={i} style={{ fontSize: '12px', color: '#C53030', margin: '2px 0' }}>• {flag}</p>
                 ))}
-                {qualResult.flags && qualResult.flags.length > 0 && (
-                  <div style={{ marginTop: '12px', padding: '10px', backgroundColor: '#FFF5F5', borderRadius: '8px' }}>
-                    {qualResult.flags.map((flag: string, i: number) => (
-                      <p key={i} style={{ fontSize: '12px', color: '#C53030', margin: '2px 0' }}>⚠ {flag}</p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {authenticity && (
-              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Document Authenticity</p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: authenticity.isAuthentic ? DARK : '#e53e3e' }}>{authenticity.isAuthentic ? '✓ Appears genuine' : '✗ Flagged'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Score</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{authenticity.score}/100</span>
-                </div>
-              </div>
-            )}
-
-            {faceMatch && (
-              <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Face Match</p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: faceMatch.match ? DARK : '#e53e3e' }}>{faceMatch.match ? '✓ Match confirmed' : '✗ No match'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Confidence</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{faceMatch.confidence}%</span>
-                </div>
               </div>
             )}
 
             {kycResult && (
               <div style={{ backgroundColor: CARD, borderRadius: '12px', padding: '20px', marginBottom: '16px' }}>
                 <p style={{ fontSize: '11px', fontWeight: 600, color: MUTED, letterSpacing: '0.08em', textTransform: 'uppercase' as const, marginBottom: '14px' }}>Identity Check</p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Provider</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: DARK }}>{kycResult.provider}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${BORDER}` }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Result</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: kycResult.verified ? DARK : '#e53e3e' }}>{kycResult.verified ? '✓ Verified' : '⏳ Pending review'}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
-                  <span style={{ fontSize: '14px', color: MUTED }}>Mode</span>
-                  <span style={{ fontSize: '13px', fontWeight: 600, color: MUTED }}>{kycResult.mode}</span>
-                </div>
+                {[
+                  { label: 'Provider', value: kycResult.provider },
+                  { label: 'Result', value: kycResult.verified ? '✓ Verified' : '⏳ Pending review', ok: kycResult.verified },
+                  { label: 'Mode', value: kycResult.mode },
+                ].map((row, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 2 ? `1px solid ${BORDER}` : 'none' }}>
+                    <span style={{ fontSize: '14px', color: MUTED }}>{row.label}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: (row as any).ok === false ? '#e53e3e' : DARK }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Duplicate notice */}
+            {validation?.duplicate && (
+              <div style={{ backgroundColor: validation.pendingExists ? '#FFFFF0' : '#F0FFF4', border: `1px solid ${validation.pendingExists ? '#FAF089' : '#C6F6D5'}`, borderRadius: '16px', padding: '28px', textAlign: 'center', marginBottom: '20px' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>{validation.pendingExists ? '⏳' : '✓'}</div>
+                <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>
+                  {validation.pendingExists ? 'Verification Already Submitted' : 'You Are Already Verified!'}
+                </h2>
+                <p style={{ fontSize: '14px', color: MUTED, marginBottom: '20px' }}>
+                  {validation.pendingExists
+                    ? 'You already have a verification pending review. Please wait for it to be processed before submitting again.'
+                    : 'Your identity has already been verified. You can view your verified badge on your dashboard.'
+                  }
+                </p>
+                <button
+                  onClick={() => router.push('/dashboard')}
+                  style={{ backgroundColor: DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 28px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  View my dashboard →
+                </button>
               </div>
             )}
 
