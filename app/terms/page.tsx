@@ -52,9 +52,9 @@ export default function TermsOfUse() {
           <P>
             Please read these Terms of Use carefully before using the Tutorverse KYC Verification Service. By creating an account or submitting your documents for verification, you agree to be bound by these terms. If you do not agree, please do not use this service.
           </P>
-          <P style={{ margin: 0 }}>
-            These terms apply to all tutors who register on the Tutorverse platform and submit their identity and qualification documents for verification.
-          </P>
+          <p style={{ fontSize: '15px', color: '#333', lineHeight: '1.8', margin: 0 }}>
+            These terms apply to all tutors who register on the Tutorverse platform and submit their documents for verification.
+          </p>
         </div>
 
         <Section title="1. About this service">
