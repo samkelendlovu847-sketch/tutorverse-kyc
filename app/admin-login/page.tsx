@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import HCaptcha from '@hcaptcha/react-hcaptcha'
 import { supabase } from '../../lib/supabase'
 
 const DARK = '#000000'
@@ -15,6 +16,8 @@ export default function AdminLogin() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState('')
+  const [captchaToken, setCaptchaToken] = useState('')
+  const captchaRef = useRef<HCaptcha>(null)
   const router = useRouter()
 
   // Check for error from callback
@@ -48,11 +51,21 @@ export default function AdminLogin() {
       setError('Please fill in all fields.')
       return
     }
+    if (!captchaToken) {
+      setError('Please complete the captcha verification.')
+      return
+    }
     setLoading(true)
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken }
+    })
     if (signInError || !data.user) {
       setError('Invalid email or password.')
       setLoading(false)
+      captchaRef.current?.resetCaptcha()
+      setCaptchaToken('')
       return
     }
     await checkAdminAndRedirect(data.user.id)
@@ -138,10 +151,20 @@ export default function AdminLogin() {
             </div>
           )}
 
+          {/* hCaptcha widget */}
+          <div style={{ marginBottom: '16px' }}>
+            <HCaptcha
+              ref={captchaRef}
+              sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
+              onVerify={(token) => setCaptchaToken(token)}
+              onExpire={() => setCaptchaToken('')}
+            />
+          </div>
+
           <button
             onClick={handleAdminLogin}
-            disabled={loading}
-            style={{ width: '100%', backgroundColor: loading ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
+            disabled={loading || !captchaToken}
+            style={{ width: '100%', backgroundColor: (loading || !captchaToken) ? '#ccc' : DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '16px', fontSize: '15px', fontWeight: 600, cursor: (loading || !captchaToken) ? 'not-allowed' : 'pointer', marginBottom: '24px' }}
           >
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
