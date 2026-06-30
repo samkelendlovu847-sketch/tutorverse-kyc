@@ -19,6 +19,7 @@ export default function Home() {
   const [step, setStep] = useState(1)
   const [fullName, setFullName] = useState('')
   const [idNumber, setIdNumber] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
   const [idFront, setIdFront] = useState<File | null>(null)
   const [idBack, setIdBack] = useState<File | null>(null)
   const [qualFile, setQualFile] = useState<File | null>(null)
@@ -199,10 +200,11 @@ export default function Home() {
 
     const { data: { session } } = await supabase.auth.getSession()
     await supabase.from('verifications').insert([{
-      full_name: fullName,
-      id_number: idNumberHash,
-      status: finalStatus,
-      user_id: session?.user?.id
+    full_name: fullName,
+    id_number: idNumberHash,
+    status: finalStatus,
+    user_id: session?.user?.id,
+    phone_number: `+27 ${phoneNumber}`.trim()
     }])
 
     setLoading(false)
@@ -321,8 +323,25 @@ export default function Home() {
               />
             </div>
 
-            <div style={{ marginBottom: '32px' }}>
-              <label style={labelStyle}>South African ID Number</label>
+            <div style={{ marginBottom: '20px' }}>
+    <label style={labelStyle}>Phone Number</label>
+  <div style={{ display: 'flex', gap: '8px' }}>
+    <div style={{ ...inputStyle, width: 'auto', flexShrink: 0, cursor: 'default', display: 'flex', alignItems: 'center' }}>
+      🇿🇦 +27
+    </div>
+    <input
+      type="tel"
+      placeholder="82 123 4567"
+      value={phoneNumber}
+      onChange={(e) => setPhoneNumber(e.target.value.replace(/[^\d\s]/g, ''))}
+      style={{ ...inputStyle, flex: 1 }}
+    />
+  </div>
+  <p style={{ fontSize: '12px', color: MUTED, marginTop: '6px' }}>We'll use this for SMS verification (coming soon).</p>
+</div>
+
+<div style={{ marginBottom: '32px' }}>
+  <label style={labelStyle}>South African ID Number</label>
               <input
                 type="text"
                 placeholder="13-digit ID number"
@@ -344,13 +363,13 @@ export default function Home() {
             </p>
 
             {btnPrimary('Continue', () => {
-              if (!fullName || idNumber.length !== 13) {
-                setStatusMsg('Please enter your full name and a valid 13-digit ID number.')
-                return
+             if (!fullName || !phoneNumber || idNumber.length !== 13) {
+               setStatusMsg('Please enter your full name, phone number, and a valid 13-digit ID number.')
+                  return
               }
-              setStatusMsg('')
+                setStatusMsg('')
               setStep(2)
-            })}
+           })}
             {statusMsg && <p style={{ fontSize: '13px', color: '#e53e3e', marginTop: '12px', textAlign: 'center' }}>{statusMsg}</p>}
           </div>
         )}
