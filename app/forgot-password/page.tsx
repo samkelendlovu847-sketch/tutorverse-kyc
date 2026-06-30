@@ -33,8 +33,9 @@ export default function ForgotPassword() {
     }
     setLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/confirm?type=recovery&next=/reset-password`
-    })
+  redirectTo: `${window.location.origin}/auth/confirm?type=recovery&next=/reset-password`,
+  captchaToken
+})
     setLoading(false)
     if (error) {
       setError(error.message)
