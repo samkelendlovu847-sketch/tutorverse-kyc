@@ -7,48 +7,13 @@ import { supabase } from '../lib/supabase'
 import { extractTextFromImage } from '../lib/ocr'
 import { validateSAID, checkNameMatch, checkDocumentAuthenticity } from '../lib/validate'
 import { compareFaces } from '../lib/faceMatch'
+import { analyseQualification } from '../lib/qualification'
 
 const DARK = '#000000'
 const CARD = '#F8F9FA'
 const BORDER = '#E5E5E5'
 const TEXT = '#000000'
 const MUTED = '#888888'
-
-const analyseQualification = (ocrText: string, fullName: string) => {
-  const text = ocrText || ''
-  const lower = text.toLowerCase()
-  const nameMatched = fullName && text.toLowerCase().includes(fullName.toLowerCase())
-  const institutionMatch = text.match(/\b([A-Z][A-Za-z]*(?:\s+(?:University|College|Institute|Academy|School|Polytechnic|Faculty|Campus|Technikon)))(?:\b|,)/i)
-  const institutionName = institutionMatch ? institutionMatch[1] : ''
-  const qualificationType = lower.includes('degree')
-    ? 'degree'
-    : lower.includes('diploma')
-      ? 'diploma'
-      : lower.includes('certificate')
-        ? 'certificate'
-        : ''
-  const yearMatch = text.match(/\b(19|20)\d{2}\b/)
-  const yearFound = yearMatch ? yearMatch[0] : ''
-  const isAccredited = /accredit|registered|saqa|che|heqc|technikon/i.test(text)
-  const status = nameMatched && qualificationType ? 'verified' : 'review_needed'
-  const confidence = Math.min(100, (nameMatched ? 40 : 0) + (qualificationType ? 30 : 0) + (yearFound ? 20 : 0) + (isAccredited ? 10 : 0))
-  const flags: string[] = []
-  if (!nameMatched) flags.push('Name not found on certificate')
-  if (!institutionName) flags.push('Institution not detected')
-  if (!qualificationType) flags.push('Qualification type not identified')
-  if (!yearFound) flags.push('Year not found')
-  return {
-    institutionName,
-    qualificationType,
-    nameMatched,
-    institutionFound: !!institutionName,
-    isAccredited,
-    yearFound,
-    status,
-    confidence,
-    flags,
-  }
-}
 
 export default function Home() {
   const [step, setStep] = useState(1)
