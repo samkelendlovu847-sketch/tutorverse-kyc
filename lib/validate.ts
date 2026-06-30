@@ -26,39 +26,56 @@ export function validateSAID(idNumber: string): ValidationResult {
   const dateStr = `${fullYear}-${month}-${day}`
   const date = new Date(dateStr)
 
-  if (isNaN(date.getTime()) || date > new Date()) {
+  if (
+    isNaN(date.getTime()) ||
+    date > new Date() ||
+    date.getMonth() + 1 !== parseInt(month) ||
+    date.getDate() !== parseInt(day)
+  ) {
     errors.push('ID number contains an invalid date of birth')
   } else {
     details.dateOfBirth = dateStr
   }
 
-  // Check 3: gender
+  // Check 3: gender (digits 6–9, value 0000–4999 = Female, 5000–9999 = Male)
   const genderDigit = parseInt(idNumber.substring(6, 10))
   details.gender = genderDigit >= 5000 ? 'Male' : 'Female'
 
-  // Check 4: citizenship
+  // Check 4: citizenship (digit 10: 0 = SA citizen, 1 = permanent resident)
   const citizenDigit = idNumber.substring(10, 11)
-  details.citizenship = citizenDigit === '0' ? 'SA Citizen' : 'Permanent Resident'
-
-  // Check 5: basic digit sum validation
-  const digits = idNumber.split('').map(Number)
-  let sum = 0
-  for (let i = 0; i < 13; i++) {
-    sum += digits[i]
+  if (citizenDigit !== '0' && citizenDigit !== '1') {
+    errors.push('Invalid citizenship digit')
+  } else {
+    details.citizenship = citizenDigit === '0' ? 'SA Citizen' : 'Permanent Resident'
   }
-  if (sum === 0) {
-    errors.push('ID number appears to be all zeros')
+
+  // Check 5: Luhn algorithm (real implementation)
+  const digits = idNumber.split('').map(Number)
+  let luhnSum = 0
+  for (let i = 0; i < 13; i++) {
+    if (i % 2 === 0) {
+      luhnSum += digits[i]
+    } else {
+      let doubled = digits[i] * 2
+      if (doubled > 9) doubled -= 9
+      luhnSum += doubled
+    }
+  }
+
+  if (luhnSum % 10 !== 0) {
+    errors.push('ID number failed the Luhn check digit validation')
   }
 
   return {
     isValid: errors.length === 0,
     errors,
-    details
+    details,
   }
 }
 
 export function checkNameMatch(formName: string, extractedText: string): boolean {
-  const nameParts = formName.toLowerCase().split(' ')
+  if (!formName || !extractedText) return false
+  const nameParts = formName.toLowerCase().trim().split(/\s+/)
   const text = extractedText.toLowerCase()
   return nameParts.some(part => part.length > 2 && text.includes(part))
 }
@@ -76,39 +93,33 @@ export function checkDocumentAuthenticity(
   const flags: string[] = []
   let score = 100
 
-  // Check 1: file size too small (likely fake or screenshot)
   if (file.size < 10000) {
     flags.push('File size is suspiciously small')
     score -= 30
   }
 
-  // Check 2: file size too large (likely altered or padded)
-  if (file.size > 10000000) {
+  if (file.size > 10_000_000) {
     flags.push('File size is unusually large')
     score -= 10
   }
 
-  // Check 3: check file type is image or pdf
   const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf']
   if (!validTypes.includes(file.type)) {
     flags.push('Invalid file type detected')
     score -= 40
   }
 
-  // Check 4: extracted text too short (blank or unreadable document)
   if (extractedText.length < 20) {
     flags.push('Document appears blank or unreadable')
     score -= 20
   }
 
-  // Check 5: check for SA ID number pattern in extracted text
   const idPattern = /\d{13}/
   if (extractedText && !idPattern.test(extractedText)) {
     flags.push('No ID number pattern found in document')
     score -= 15
   }
 
-  // Check 6: check for suspicious keywords
   const suspiciousKeywords = ['copy', 'specimen', 'sample', 'void', 'fake', 'test']
   const lowerText = extractedText.toLowerCase()
   suspiciousKeywords.forEach(keyword => {
@@ -121,6 +132,6 @@ export function checkDocumentAuthenticity(
   return {
     isAuthentic: score >= 60,
     score: Math.max(0, score),
-    flags
+    flags,
   }
 }

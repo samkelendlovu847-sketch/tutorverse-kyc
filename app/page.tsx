@@ -328,7 +328,7 @@ export default function Home() {
         <span style={{ color: MUTED, fontSize: '12px', letterSpacing: '0.05em', textTransform: 'uppercase' as const }}>KYC Verification</span>
       </nav>
 
-      +<div style={{ maxWidth: '560px', margin: '0 auto', padding: 'clamp(24px, 5vw, 48px) clamp(16px, 4vw, 24px)' }}>
+      <div style={{ maxWidth: '560px', margin: '0 auto', padding: 'clamp(24px, 5vw, 48px) clamp(16px, 4vw, 24px)' }}>
 
         {/* STEP 1 — Personal Info */}
         {step === 1 && (
@@ -512,29 +512,6 @@ export default function Home() {
         )}
 
         {/* STEP 6 — Result */}
-        {/* Duplicate submission notice */}
-            {validation?.duplicate && (
-              <div style={{ backgroundColor: validation.pendingExists ? '#FFFFF0' : '#F0FFF4', border: `1px solid ${validation.pendingExists ? '#FAF089' : '#C6F6D5'}`, borderRadius: '16px', padding: '28px', textAlign: 'center', marginBottom: '20px' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>
-                  {validation.pendingExists ? '⏳' : '✓'}
-                </div>
-                <h2 style={{ fontSize: '20px', fontWeight: 700, color: DARK, marginBottom: '8px' }}>
-                  {validation.pendingExists ? 'Verification Already Submitted' : 'You Are Already Verified!'}
-                </h2>
-                <p style={{ fontSize: '14px', color: MUTED, marginBottom: '20px' }}>
-                  {validation.pendingExists
-                    ? 'You already have a verification pending review. Please wait for it to be processed before submitting again.'
-                    : 'Your identity has already been verified. You can view your verified badge on your dashboard.'
-                  }
-                </p>
-                <button
-                  onClick={() => router.push('/dashboard')}
-                  style={{ backgroundColor: DARK, color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 28px', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
-                >
-                  View my dashboard →
-                </button>
-              </div>
-            )}
         {step === 6 && (
           <div>
             {/* Overall status header */}

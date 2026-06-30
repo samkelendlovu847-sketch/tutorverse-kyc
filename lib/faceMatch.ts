@@ -1,3 +1,21 @@
+let modelsLoaded = false
+
+async function loadModels(faceapi: any): Promise<boolean> {
+  if (modelsLoaded) return true
+  try {
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
+      faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
+      faceapi.nets.faceRecognitionNet.loadFromUri('/models'),
+    ])
+    modelsLoaded = true
+    return true
+  } catch (err) {
+    console.error('face-api.js model load failed:', err)
+    return false
+  }
+}
+
 export async function compareFaces(
   idFile: File,
   selfieFile: File
@@ -5,30 +23,32 @@ export async function compareFaces(
   try {
     const faceapi = await import('face-api.js')
 
-    await faceapi.nets.tinyFaceDetector.loadFromUri('/models')
-    await faceapi.nets.faceLandmark68Net.loadFromUri('/models')
-    await faceapi.nets.faceRecognitionNet.loadFromUri('/models')
+    const loaded = await loadModels(faceapi)
+    if (!loaded) {
+      return {
+        match: false,
+        confidence: 0,
+        message: 'Face matching models could not be loaded — check /public/models',
+      }
+    }
 
     const idImage = await createImageElement(idFile)
     const selfieImage = await createImageElement(selfieFile)
 
-    // Use more tolerant detection options
     const options = new faceapi.TinyFaceDetectorOptions({
       inputSize: 416,
-      scoreThreshold: 0.3
+      scoreThreshold: 0.3,
     })
 
-    // Try detecting from full image first
     let idDetection = await faceapi
       .detectSingleFace(idImage, options)
       .withFaceLandmarks()
       .withFaceDescriptor()
 
-    // If no face found in ID, try with lower threshold
     if (!idDetection) {
       const looseOptions = new faceapi.TinyFaceDetectorOptions({
         inputSize: 608,
-        scoreThreshold: 0.2
+        scoreThreshold: 0.2,
       })
       idDetection = await faceapi
         .detectSingleFace(idImage, looseOptions)
@@ -42,27 +62,13 @@ export async function compareFaces(
       .withFaceDescriptor()
 
     if (!idDetection && !selfieDetection) {
-      return {
-        match: false,
-        confidence: 0,
-        message: 'No face detected in either image — try a clearer photo'
-      }
+      return { match: false, confidence: 0, message: 'No face detected in either image — try a clearer photo' }
     }
-
     if (!idDetection) {
-      return {
-        match: false,
-        confidence: 0,
-        message: 'No face detected in ID document — ensure the photo is clear and well lit'
-      }
+      return { match: false, confidence: 0, message: 'No face detected in ID — ensure the photo is clear and well lit' }
     }
-
     if (!selfieDetection) {
-      return {
-        match: false,
-        confidence: 0,
-        message: 'No face detected in selfie — ensure your face is clearly visible'
-      }
+      return { match: false, confidence: 0, message: 'No face detected in selfie — ensure your face is clearly visible' }
     }
 
     const distance = faceapi.euclideanDistance(
@@ -70,7 +76,6 @@ export async function compareFaces(
       selfieDetection.descriptor
     )
 
-    // More generous threshold — 0.6 instead of 0.5
     const match = distance < 0.6
     const confidence = Math.round(Math.max(0, (1 - distance) * 100))
 
@@ -79,15 +84,11 @@ export async function compareFaces(
       confidence,
       message: match
         ? `Face match confirmed — ${confidence}% similarity`
-        : `Face match failed — ${confidence}% similarity`
+        : `Face match failed — ${confidence}% similarity`,
     }
   } catch (error) {
     console.error('Face match error:', error)
-    return {
-      match: false,
-      confidence: 0,
-      message: 'Face comparison could not be completed'
-    }
+    return { match: false, confidence: 0, message: 'Face comparison could not be completed' }
   }
 }
 
